@@ -87,6 +87,7 @@ export const LiveTrackingMap: React.FC<LiveTrackingMapProps> = ({
   );
   const [geoError, setGeoError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState<boolean>(false);
+  const [callNotice, setCallNotice] = useState<string | null>(null);
 
   // Sync displayProgress smoothly toward booking.trackingProgress when stage button is clicked
   useEffect(() => {
@@ -529,20 +530,32 @@ export const LiveTrackingMap: React.FC<LiveTrackingMapProps> = ({
               >
                 View Provider Profile
               </button>
-              <a
-                href={`tel:+919876543210`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert(
+              <button
+                type="button"
+                onClick={() => {
+                  setCallNotice(
                     `Demo Call Interface: Dialing sample professional ${booking.professionalName} (+91-98765-43210 — Illustrative Number)`
                   );
                 }}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-500"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-500 cursor-pointer"
               >
                 <PhoneCall className="h-3.5 w-3.5" />
                 Demo Call Provider
-              </a>
+              </button>
             </div>
+
+            {callNotice && (
+              <div className="mt-3 flex items-center justify-between rounded-xl bg-teal-50 p-2.5 text-xs text-teal-900 border border-teal-200">
+                <span className="truncate">{callNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setCallNotice(null)}
+                  className="ml-2 font-bold text-teal-700 hover:text-teal-900 cursor-pointer shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 6-Stage Progress Timeline */}

@@ -17,6 +17,8 @@ type SupportedLanguage = 'en' | 'hi' | 'bn';
 interface ChatbotWidgetProps {
   onSelectCategory: (catId: ServiceCategoryId) => void;
   onNavigate: (page: ActivePage) => void;
+  externalLanguage?: SupportedLanguage;
+  onLanguageChange?: (lang: SupportedLanguage) => void;
 }
 
 interface ChatAction {
@@ -237,9 +239,12 @@ function readLiveBookings(): Booking[] {
 export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
   onSelectCategory,
   onNavigate,
+  externalLanguage,
+  onLanguageChange,
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [language, setLanguage] = useState<SupportedLanguage>(() => {
+    if (externalLanguage) return externalLanguage;
     try {
       const saved = localStorage.getItem(LANG_STORAGE_KEY);
       if (saved === 'hi' || saved === 'bn' || saved === 'en') return saved;
@@ -262,6 +267,20 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (externalLanguage && externalLanguage !== language) {
+      setLanguage(externalLanguage);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `lang-sync-${Date.now()}`,
+          sender: 'bot',
+          text: UI_STRINGS[externalLanguage].welcome,
+        },
+      ]);
+    }
+  }, [externalLanguage, language]);
+
+  useEffect(() => {
     try {
       localStorage.setItem(LANG_STORAGE_KEY, language);
     } catch {
@@ -275,6 +294,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
 
   const handleLanguageChange = (newLang: SupportedLanguage) => {
     setLanguage(newLang);
+    onLanguageChange?.(newLang);
     setMessages((prev) => [
       ...prev,
       {

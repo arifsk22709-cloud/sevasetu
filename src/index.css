@@ -8,6 +8,10 @@
   }
 }
 
+html.large-text {
+  font-size: 108%;
+}
+
 /* Global Dark Theme Overrides */
 html.dark body {
   background-color: #090d16;

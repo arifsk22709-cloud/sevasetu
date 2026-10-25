@@ -62,6 +62,7 @@ import {
 import { SafeImage } from './components/SafeImage';
 import { LiveTrackingMap } from './components/LiveTrackingMap';
 import { ChatbotWidget } from './components/ChatbotWidget';
+import { AppLanguage, LANGUAGE_OPTIONS, APP_TRANSLATIONS } from './data/translations';
 
 type ActivePage = 'home' | 'services' | 'bookings' | 'tracking' | 'rewards';
 type SupportedLanguage = 'en' | 'hi' | 'bn';
@@ -381,6 +382,7 @@ export default function App() {
   const [minRatingFilter, setMinRatingFilter] = useState<number>(0);
   const [maxPriceFilter, setMaxPriceFilter] = useState<number>(5000);
   const [onlyFavourites, setOnlyFavourites] = useState<boolean>(false);
+  const [onlyCertified, setOnlyCertified] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'recommended' | 'rating' | 'price-asc' | 'price-desc'>(
     'recommended'
   );
@@ -405,6 +407,8 @@ export default function App() {
   const [cancelModalBooking, setCancelModalBooking] = useState<Booking | null>(null);
   const [feedbackModalBooking, setFeedbackModalBooking] = useState<Booking | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedBookingId, setCopiedBookingId] = useState<string | null>(null);
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
 
   // Booking Form State
   const [customerName, setCustomerName] = useState<string>('Aarav Sharma');
@@ -549,6 +553,7 @@ export default function App() {
     professionalsWithDynamicStats,
     selectedCategory,
     onlyFavourites,
+    onlyCertified,
     favourites,
     certifiedOnlyFilter,
     cityFilter,
@@ -1067,7 +1072,7 @@ export default function App() {
                 key={item.id}
                 type="button"
                 onClick={() => setActivePage(item.id)}
-                className={`relative rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold transition cursor-pointer ${
+                className={`relative rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
                   activePage === item.id
                     ? 'bg-orange-500/15 text-orange-600'
                     : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -1104,7 +1109,7 @@ export default function App() {
                 setOnlyFavourites(true);
                 setActivePage('services');
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Heart className="h-4 w-4 fill-rose-500 text-rose-500" />
               <span>({favourites.length})</span>
@@ -1134,10 +1139,10 @@ export default function App() {
                   setAuthMode('signin');
                   setAuthModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <LogIn className="h-4 w-4 text-orange-600" />
-                <span>Sign In</span>
+                <span>{t.signIn}</span>
               </button>
             )}
 
@@ -1147,7 +1152,7 @@ export default function App() {
                 setOnlyFavourites(false);
                 setActivePage('services');
               }}
-              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95 cursor-pointer"
+              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95 cursor-pointer whitespace-nowrap shrink-0"
             >
               {t.bookServiceBtn}
             </button>
@@ -1157,15 +1162,12 @@ export default function App() {
           <div className="flex md:hidden items-center gap-2">
             <button
               type="button"
-              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-              aria-label="Toggle Theme"
-              className="rounded-xl border border-slate-200 p-2.5 text-slate-700"
+              onClick={() => setControlDrawerOpen(true)}
+              aria-label="Open Control Hub Drawer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500/15 border border-orange-500/30 px-3 py-2 text-xs font-extrabold text-orange-600"
             >
-              {theme === 'light' ? (
-                <Moon className="h-5 w-5" />
-              ) : (
-                <Sun className="h-5 w-5 text-amber-400" />
-              )}
+              <Settings className="h-4 w-4" />
+              <span>Hub</span>
             </button>
           </div>
         </div>
@@ -1475,7 +1477,7 @@ export default function App() {
                       <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-900 p-4 text-white">
                         <div>
                           <span className="text-xs font-bold uppercase tracking-wider text-teal-400">
-                            Active Live Demo Booking
+                            {t.activeLiveBookingLabel}
                           </span>
                           <p className="text-base font-bold mt-0.5">
                             Acharya Vishwanath • Griha Pravesh Puja
@@ -1487,7 +1489,7 @@ export default function App() {
                           onClick={() => setActivePage('tracking')}
                           className="rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-teal-400 cursor-pointer"
                         >
-                          Track Live
+                          {t.trackLiveBtn}
                         </button>
                       </div>
                     </div>
@@ -1501,7 +1503,7 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
                 <div>
                   <span className="text-sm font-bold uppercase tracking-wider text-orange-600">
-                    8 Specialized Categories
+                    {t.categoriesKicker}
                   </span>
                   <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-1">
                     {t.categoriesTitle}
@@ -1521,7 +1523,10 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                {SERVICE_CATEGORIES.map((cat) => (
+                {SERVICE_CATEGORIES.map((cat) => {
+                  const localizedCat = t.categories[cat.id];
+                  const isCatCertified = isCertifiedCategory(cat.id);
+                  return (
                   <div
                     key={cat.id}
                     onClick={() => {
@@ -1535,7 +1540,7 @@ export default function App() {
                     <div className="relative h-44 w-full overflow-hidden">
                       <SafeImage
                         src={cat.imageUrl}
-                        alt={cat.name}
+                        alt={localizedCat.name}
                         fallbackLabel={cat.fallbackLabel}
                         className="h-full w-full transition duration-500 group-hover:scale-105"
                       />
@@ -1543,8 +1548,26 @@ export default function App() {
                         <span className="text-orange-400">
                           {renderCategoryIcon(cat.iconName, 'h-4 w-4')}
                         </span>
-                        <span>{cat.name}</span>
+                        <span>{localizedCat.name}</span>
                       </div>
+                      {isCatCertified && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCertifiedModalTarget({
+                              title: localizedCat.name,
+                              categoryName: localizedCat.name,
+                              catId: cat.id,
+                            });
+                          }}
+                          className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-xl bg-emerald-600/95 px-2.5 py-1 text-[11px] font-extrabold text-white shadow-md hover:bg-emerald-500 cursor-pointer whitespace-nowrap shrink-0"
+                          title={t.certifiedModalTitle}
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span>{t.certifiedBadge}</span>
+                        </button>
+                      )}
                       <div className="absolute bottom-3 right-3 rounded-lg bg-slate-900/90 px-3 py-1 text-xs font-extrabold text-white shadow">
                         {t.startingAt} ₹{cat.startingPrice}
                       </div>
@@ -1552,10 +1575,29 @@ export default function App() {
 
                     <div className="flex flex-1 flex-col justify-between p-5">
                       <div>
-                        <p className="text-xs font-semibold text-orange-600">{cat.hindiSub}</p>
-                        <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">{cat.name}</h3>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-orange-600">{localizedCat.sub}</p>
+                          {isCatCertified && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCertifiedModalTarget({
+                                  title: localizedCat.name,
+                                  categoryName: localizedCat.name,
+                                  catId: cat.id,
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-500/20 cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                              <span>{t.certifiedBadge}</span>
+                            </button>
+                          )}
+                        </div>
+                        <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">{localizedCat.name}</h3>
                         <p className="mt-2 text-base text-slate-600 line-clamp-2 leading-relaxed">
-                          {cat.shortDescription}
+                          {localizedCat.desc}
                         </p>
                       </div>
                       <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100 text-sm font-bold text-orange-600">
@@ -1564,7 +1606,8 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -1585,6 +1628,8 @@ export default function App() {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {professionalsWithDynamicStats.slice(0, 6).map((pro) => {
                     const isFav = favourites.includes(pro.id);
+                    const localizedCatName = t.categories[pro.categoryId]?.name || pro.categoryName;
+                    const proCertified = isCertifiedPro(pro);
                     return (
                       <div
                         key={pro.id}
@@ -1595,14 +1640,33 @@ export default function App() {
                             <SafeImage
                               src={pro.imageUrl}
                               alt={pro.name}
-                              fallbackLabel={pro.categoryName}
+                              fallbackLabel={localizedCatName}
                               className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-bold text-orange-600">
-                                  {pro.categoryName}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-bold text-orange-600">
+                                    {localizedCatName}
+                                  </span>
+                                  {proCertified && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setCertifiedModalTarget({
+                                          title: pro.name,
+                                          categoryName: localizedCatName,
+                                          pro,
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-extrabold text-emerald-700 hover:bg-emerald-500/25 cursor-pointer whitespace-nowrap shrink-0"
+                                      title={t.certifiedModalTitle}
+                                    >
+                                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                      <span>{t.certifiedBadge}</span>
+                                    </button>
+                                  )}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => toggleFavourite(pro.id)}
@@ -1675,14 +1739,14 @@ export default function App() {
                               onClick={() => setProfileModalProId(pro.id)}
                               className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                             >
-                              View Profile
+                              {t.viewProfileBtn}
                             </button>
                             <button
                               type="button"
                               onClick={() => openBookingModal(pro)}
                               className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
                             >
-                              Book Now
+                              {t.bookNowBtn}
                             </button>
                           </div>
                         </div>
@@ -1730,7 +1794,7 @@ export default function App() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  Discover Home & Religious Service Professionals
+                  {t.servicesPageTitle}
                 </h1>
                 <p className="text-base text-slate-600 mt-1">{t.finalConfirmed}</p>
               </div>
@@ -1775,7 +1839,7 @@ export default function App() {
                     : 'border border-slate-200 bg-white text-slate-700'
                 }`}
               >
-                All Categories (16)
+                {t.allCategoriesBtn}
               </button>
               {SERVICE_CATEGORIES.map((cat) => (
                 <button
@@ -1789,7 +1853,7 @@ export default function App() {
                   }`}
                 >
                   {renderCategoryIcon(cat.iconName, 'h-4 w-4')}
-                  <span>{cat.name}</span>
+                  <span>{t.categories[cat.id]?.name || cat.name}</span>
                 </button>
               ))}
             </div>
@@ -1922,16 +1986,16 @@ export default function App() {
                 onClick={() => setActivePage('services')}
                 className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white cursor-pointer"
               >
-                + Book Another Service
+                {t.bookAnotherServiceBtn}
               </button>
             </div>
 
             <div className="flex border-b border-slate-200 gap-2">
               {(
                 [
-                  { id: 'Upcoming', count: upcomingBookings.length },
-                  { id: 'Completed', count: completedBookings.length },
-                  { id: 'Cancelled', count: cancelledBookings.length },
+                  { id: 'Upcoming', label: t.tabUpcoming, count: upcomingBookings.length },
+                  { id: 'Completed', label: t.tabCompleted, count: completedBookings.length },
+                  { id: 'Cancelled', label: t.tabCancelled, count: cancelledBookings.length },
                 ] as const
               ).map((tab) => (
                 <button
@@ -1944,7 +2008,7 @@ export default function App() {
                       : 'border-transparent text-slate-600'
                   }`}
                 >
-                  <span>{tab.id}</span>
+                  <span>{tab.label}</span>
                   <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-extrabold text-slate-800">
                     {tab.count}
                   </span>
@@ -1958,7 +2022,11 @@ export default function App() {
                 : bookingTab === 'Completed'
                 ? completedBookings
                 : cancelledBookings
-              ).map((bk) => (
+              ).map((bk) => {
+                const isHighlighted = highlightedBookingId === bk.id;
+                const isCopied = copiedBookingId === bk.id;
+                const localizedCatName = t.categories[bk.categoryId]?.name || bk.categoryName;
+                return (
                 <div
                   key={bk.id}
                   className={`rounded-2xl border bg-white p-5 shadow-xs transition ${
@@ -1967,22 +2035,44 @@ export default function App() {
                       : 'border-slate-200'
                   }`}
                 >
+                  {isHighlighted && (
+                    <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3.5 py-2 text-xs font-semibold text-orange-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Share2 className="h-3.5 w-3.5 text-orange-600" />
+                        {t.sharedHighlightBanner} ({bk.reference})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHighlightedBookingId(null);
+                          try {
+                            window.history.replaceState({}, '', window.location.pathname);
+                          } catch {
+                            // Ignore history error
+                          }
+                        }}
+                        className="font-bold text-orange-700 hover:underline cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        {t.dismissBtn}
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-start gap-4">
                       <SafeImage
                         src={bk.professionalPhoto}
                         alt={bk.professionalName}
-                        fallbackLabel={bk.categoryName}
+                        fallbackLabel={localizedCatName}
                         className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
                       />
                       <div className="space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-0.5 font-mono text-xs sm:text-sm font-bold text-slate-700">
                             <Ticket className="h-3.5 w-3.5 text-orange-600" />
-                            Booking Ticket: {bk.reference}
+                            {t.bookingTicketLabel}: {bk.reference}
                           </span>
                           <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs font-bold text-orange-600">
-                            {bk.categoryName}
+                            {localizedCatName}
                           </span>
                         </div>
                         <h3 className="text-lg font-extrabold text-slate-900">
@@ -2010,7 +2100,7 @@ export default function App() {
                         <span className="block text-xs font-medium text-slate-400">
                           {t.estimatedCost}
                         </span>
-                        <span className="text-xl font-extrabold text-slate-900">
+                        <span className="text-xl font-extrabold text-slate-900 tabular-nums">
                           ₹{bk.totalPrice}
                         </span>
                       </div>
@@ -2038,7 +2128,7 @@ export default function App() {
                               }}
                               className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-sm font-semibold text-amber-600 cursor-pointer"
                             >
-                              Reschedule
+                              {t.rescheduleBtn}
                             </button>
                             <button
                               type="button"
@@ -2056,7 +2146,7 @@ export default function App() {
                               className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white cursor-pointer"
                             >
                               <Navigation className="h-4 w-4" />
-                              Track Live
+                              {t.trackLiveBtn}
                             </button>
                           </>
                         )}
@@ -2079,7 +2169,8 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2601,6 +2692,8 @@ export default function App() {
 
       {/* Interactive Multilingual AI Chatbot */}
       <ChatbotWidget
+        externalLanguage={appLang}
+        onLanguageChange={(lang) => handleAppLanguageChange(lang)}
         onSelectCategory={(catId) => {
           setSelectedCategory(catId);
           setOnlyFavourites(false);
