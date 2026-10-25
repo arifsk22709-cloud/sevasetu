@@ -38,6 +38,14 @@ import {
   Mail,
   Lock,
   Smartphone,
+  Share2,
+  Globe,
+  SlidersHorizontal,
+  ShieldCheck,
+  Settings,
+  ShoppingBag,
+  Bell,
+  ChevronRight,
 } from 'lucide-react';
 import {
   ServiceCategoryId,
@@ -59,6 +67,7 @@ import {
 import { SafeImage } from './components/SafeImage';
 import { LiveTrackingMap } from './components/LiveTrackingMap';
 import { ChatbotWidget } from './components/ChatbotWidget';
+import { AppLanguage, LANGUAGE_OPTIONS, APP_TRANSLATIONS } from './data/translations';
 
 type ActivePage = 'home' | 'services' | 'bookings' | 'tracking' | 'rewards';
 
@@ -76,6 +85,8 @@ const STORAGE_KEYS = {
   USER_REVIEWS: 'sevasetu_user_reviews_v1',
   THEME: 'sevasetu_theme_v1',
   USER: 'sevasetu_auth_user_v1',
+  LANGUAGE: 'sevasetu_app_lang_v1',
+  TEXT_SIZE: 'sevasetu_text_size_v1',
 };
 
 function getTodayDateString(): string {
@@ -86,11 +97,82 @@ function getTodayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
+const CERTIFIED_CATEGORY_IDS: ServiceCategoryId[] = [
+  'priest',
+  'housekeeping',
+  'electrician',
+  'plumber',
+  'carpentry',
+];
+
+function isCertifiedCategory(catId: ServiceCategoryId): boolean {
+  return CERTIFIED_CATEGORY_IDS.includes(catId);
+}
+
+function isCertifiedPro(pro: Professional): boolean {
+  return pro.id.endsWith('-1') || pro.baseRating >= 4.9;
+}
+
 export default function App() {
   // Navigation & Page State
   const [activePage, setActivePage] = useState<ActivePage>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [controlDrawerOpen, setControlDrawerOpen] = useState<boolean>(false);
+  const [smsAlertsEnabled, setSmsAlertsEnabled] = useState<boolean>(true);
+  const [certifiedModalTarget, setCertifiedModalTarget] = useState<{
+    title: string;
+    categoryName: string;
+    pro?: Professional;
+    catId?: ServiceCategoryId;
+  } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // App Language State (English / Hindi / Bengali)
+  const [appLang, setAppLang] = useState<AppLanguage>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.LANGUAGE);
+      if (saved === 'en' || saved === 'hi' || saved === 'bn') return saved;
+      return 'en';
+    } catch {
+      return 'en';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LANGUAGE, appLang);
+      localStorage.setItem('sevasetu_chat_lang_v1', appLang);
+      document.documentElement.lang = appLang;
+    } catch {
+      // Ignore storage error
+    }
+  }, [appLang]);
+
+  const t = APP_TRANSLATIONS[appLang];
+
+  // Text Size Readability State (Normal / Large)
+  const [textSize, setTextSize] = useState<'normal' | 'large'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.TEXT_SIZE);
+      return saved === 'large' ? 'large' : 'normal';
+    } catch {
+      return 'normal';
+    }
+  });
+
+  useEffect(() => {
+    const rootEl = document.documentElement;
+    if (textSize === 'large') {
+      rootEl.classList.add('large-text');
+    } else {
+      rootEl.classList.remove('large-text');
+    }
+    try {
+      localStorage.setItem(STORAGE_KEYS.TEXT_SIZE, textSize);
+    } catch {
+      // Ignore storage error
+    }
+  }, [textSize]);
 
   // Theme State (Light / Dark)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -115,6 +197,16 @@ export default function App() {
       // Ignore storage error
     }
   }, [theme]);
+
+  const handleAppLanguageChange = (newLang: AppLanguage) => {
+    setAppLang(newLang);
+    const messages: Record<AppLanguage, string> = {
+      en: 'App language changed to English',
+      hi: 'ऐप की भाषा हिन्दी में बदल दी गई है',
+      bn: 'অ্যাপের ভাষা বাংলায় পরিবর্তন করা হয়েছে',
+    };
+    showToast(messages[newLang]);
+  };
 
   // Authenticated User State
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
@@ -216,6 +308,7 @@ export default function App() {
   const [minRatingFilter, setMinRatingFilter] = useState<number>(0);
   const [maxPriceFilter, setMaxPriceFilter] = useState<number>(5000);
   const [onlyFavourites, setOnlyFavourites] = useState<boolean>(false);
+  const [onlyCertified, setOnlyCertified] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'recommended' | 'rating' | 'price-asc' | 'price-desc'>(
     'recommended'
   );
@@ -233,6 +326,8 @@ export default function App() {
   const [cancelModalBooking, setCancelModalBooking] = useState<Booking | null>(null);
   const [feedbackModalBooking, setFeedbackModalBooking] = useState<Booking | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedBookingId, setCopiedBookingId] = useState<string | null>(null);
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
 
   // Booking Form State
   const [customerName, setCustomerName] = useState<string>('Aarav Sharma');
@@ -366,6 +461,7 @@ export default function App() {
       .filter((pro) => {
         if (selectedCategory !== 'all' && pro.categoryId !== selectedCategory) return false;
         if (onlyFavourites && !favourites.includes(pro.id)) return false;
+        if (onlyCertified && !isCertifiedPro(pro)) return false;
         if (cityFilter !== 'All' && pro.cityZone !== cityFilter) return false;
         if (pro.computedRating < minRatingFilter) return false;
         if (pro.priceInr > maxPriceFilter) return false;
@@ -390,6 +486,7 @@ export default function App() {
     professionalsWithDynamicStats,
     selectedCategory,
     onlyFavourites,
+    onlyCertified,
     favourites,
     cityFilter,
     minRatingFilter,
@@ -426,6 +523,118 @@ export default function App() {
       showToast(exists ? 'Removed from your Favourites' : 'Saved to your Favourites ♥');
       return next;
     });
+  };
+
+  // Deep-Link Handler: Check URL query parameters on load for shared bookings
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const sharedBookingRefOrId = params.get('booking');
+      const encodedData = params.get('data');
+
+      if (!sharedBookingRefOrId && !encodedData) return;
+
+      let targetBooking = bookings.find(
+        (b) =>
+          b.reference.toLowerCase() === (sharedBookingRefOrId || '').toLowerCase() ||
+          b.id === sharedBookingRefOrId
+      );
+
+      if (!targetBooking && encodedData) {
+        try {
+          const decodedJson = decodeURIComponent(atob(decodeURIComponent(encodedData)));
+          const parsedBooking = JSON.parse(decodedJson) as Booking;
+          if (parsedBooking && parsedBooking.id && parsedBooking.reference) {
+            targetBooking = parsedBooking;
+            setBookings((prev) => {
+              if (prev.some((b) => b.id === parsedBooking.id || b.reference === parsedBooking.reference)) {
+                return prev;
+              }
+              return [parsedBooking, ...prev];
+            });
+          }
+        } catch {
+          // Ignore malformed data parameter
+        }
+      }
+
+      if (targetBooking) {
+        setActivePage('bookings');
+        setBookingTab(targetBooking.tabStatus);
+        setHighlightedBookingId(targetBooking.id);
+        showToast(`Opened shared booking ${targetBooking.reference}`);
+
+        const targetId = targetBooking.id;
+        window.setTimeout(() => {
+          const cardEl = document.getElementById(`booking-card-${targetId}`);
+          cardEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 180);
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Copy Formatted Booking Details + Deep-Link to Clipboard
+  const handleShareBooking = async (bk: Booking) => {
+    let shareUrl = `${window.location.origin}${window.location.pathname}?page=bookings&booking=${encodeURIComponent(
+      bk.reference
+    )}`;
+    try {
+      const encodedSnapshot = encodeURIComponent(btoa(encodeURIComponent(JSON.stringify(bk))));
+      shareUrl += `&data=${encodedSnapshot}`;
+    } catch {
+      // Fallback to reference-only URL if encoding fails
+    }
+
+    const statusLabel =
+      bk.tabStatus === 'Upcoming' ? `Upcoming (${bk.trackingStage})` : bk.tabStatus;
+
+    const shareText = [
+      `SevaSetu Booking Details`,
+      `Booking Reference: ${bk.reference}`,
+      `Provider: ${bk.professionalName} (${bk.categoryName})`,
+      `Date & Time: ${bk.date} • ${bk.timeSlot}`,
+      `Status: ${statusLabel}`,
+      `Address: ${bk.address}`,
+      `Total Price: ₹${bk.totalPrice} (${bk.paymentMethod})`,
+      `View Booking: ${shareUrl}`,
+    ].join('\n');
+
+    let copiedSuccess = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareText);
+        copiedSuccess = true;
+      }
+    } catch {
+      copiedSuccess = false;
+    }
+
+    if (!copiedSuccess) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = shareText;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copiedSuccess = true;
+      } catch {
+        // Ignore fallback failure
+      }
+    }
+
+    setCopiedBookingId(bk.id);
+    window.setTimeout(() => {
+      setCopiedBookingId((prev) => (prev === bk.id ? null : prev));
+    }, 2500);
+
+    showToast(`Booking ${bk.reference} details & link copied to clipboard!`);
   };
 
   // Open Booking Modal
@@ -827,72 +1036,249 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 transition-colors duration-200">
-      {/* Top Demo Transparency Strip */}
-      <div className="bg-slate-900 text-slate-200 px-4 py-2 text-xs sm:text-sm border-b border-slate-800">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="rounded bg-orange-500/20 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-orange-300 border border-orange-400/30">
-              Hackathon Prototype
-            </span>
-            <span className="text-xs sm:text-sm text-slate-300">
-              Sample listings, simulated route GPS, and demo payment options. No real credentials collected.
-            </span>
+      {/* Interactive Global App Control Bar (Language, Zone, Readability, Theme & Quick Controls) */}
+      <div
+        role="region"
+        aria-label={t.controlBarLabel}
+        className="bg-slate-900 text-slate-200 px-3 py-2 text-xs border-b border-slate-800"
+      >
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2.5">
+          {/* Left: Triple-Line Control Hub Button + Language Switcher (English / Hindi / Bengali) */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setControlDrawerOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1 text-xs font-extrabold text-white shadow-xs hover:opacity-95 cursor-pointer whitespace-nowrap shrink-0"
+              title="Open Control Bar Menu (My Bookings, Orders, Settings)"
+            >
+              <Menu className="h-3.5 w-3.5" />
+              <span>{t.menuButtonLabel}</span>
+            </button>
+
+            {/* Segmented Language Switcher */}
+            <div
+              role="group"
+              aria-label={t.languageLabel}
+              className="inline-flex items-center gap-1 rounded-xl bg-slate-800/90 p-1 border border-slate-700"
+            >
+              <span className="inline-flex items-center gap-1 px-2 text-[11px] font-semibold text-slate-400 whitespace-nowrap shrink-0">
+                <Globe className="h-3.5 w-3.5 text-orange-400" />
+                <span className="hidden sm:inline">{t.languageLabel}:</span>
+              </span>
+              {LANGUAGE_OPTIONS.map((langOpt) => {
+                const isActive = appLang === langOpt.code;
+                return (
+                  <button
+                    key={langOpt.code}
+                    type="button"
+                    onClick={() => handleAppLanguageChange(langOpt.code)}
+                    aria-pressed={isActive}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      isActive
+                        ? 'bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-2xs'
+                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {langOpt.nativeLabel}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick NCR Service Zone Filter */}
+            <div className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-slate-800/90 px-2.5 py-1 border border-slate-700">
+              <MapPin className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+              <label htmlFor="control-bar-zone" className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
+                {t.zoneLabel}:
+              </label>
+              <select
+                id="control-bar-zone"
+                value={cityFilter}
+                onChange={(e) => {
+                  setCityFilter(e.target.value);
+                  if (activePage !== 'services') {
+                    setActivePage('services');
+                  }
+                  showToast(
+                    e.target.value === 'All'
+                      ? 'Showing professionals across all NCR zones'
+                      : `Filtered professionals for ${e.target.value}`
+                  );
+                }}
+                className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              >
+                <option value="All" className="text-slate-900 bg-white">
+                  {t.allZones}
+                </option>
+                <option value="Noida" className="text-slate-900 bg-white">
+                  Noida
+                </option>
+                <option value="Delhi" className="text-slate-900 bg-white">
+                  Delhi
+                </option>
+                <option value="Gurgaon" className="text-slate-900 bg-white">
+                  Gurgaon
+                </option>
+                <option value="Ghaziabad" className="text-slate-900 bg-white">
+                  Ghaziabad
+                </option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Right: Text Size Readability, Theme Mode, Quick Live Track & Reset Demo */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Text Size Readability Toggle */}
+            <div
+              role="group"
+              aria-label={t.textSizeLabel}
+              className="inline-flex items-center gap-1 rounded-xl bg-slate-800/90 p-1 border border-slate-700"
+            >
+              <span className="hidden md:inline px-1.5 text-[11px] font-semibold text-slate-400 whitespace-nowrap">
+                {t.textSizeLabel}:
+              </span>
+              <button
+                type="button"
+                onClick={() => setTextSize('normal')}
+                aria-pressed={textSize === 'normal'}
+                title="Standard Text Size"
+                className={`rounded-lg px-2 py-0.5 text-xs font-bold transition cursor-pointer ${
+                  textSize === 'normal'
+                    ? 'bg-slate-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {t.textNormal}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTextSize('large')}
+                aria-pressed={textSize === 'large'}
+                title="Large Readable Text Size"
+                className={`rounded-lg px-2 py-0.5 text-xs font-bold transition cursor-pointer ${
+                  textSize === 'large'
+                    ? 'bg-orange-500 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {t.textLarge}
+              </button>
+            </div>
+
+            {/* Theme Segmented Switcher */}
+            <div
+              role="group"
+              aria-label="Theme Switcher"
+              className="inline-flex items-center gap-1 rounded-xl bg-slate-800/90 p-1 border border-slate-700"
+            >
+              <button
+                type="button"
+                onClick={() => setTheme('light')}
+                aria-pressed={theme === 'light'}
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  theme === 'light'
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Sun className="h-3 w-3" />
+                <span className="hidden sm:inline">{t.themeLight}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTheme('dark')}
+                aria-pressed={theme === 'dark'}
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  theme === 'dark'
+                    ? 'bg-indigo-500 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Moon className="h-3 w-3" />
+                <span className="hidden sm:inline">{t.themeDark}</span>
+              </button>
+            </div>
+
+            {/* Quick Live Track Button */}
+            <button
+              type="button"
+              onClick={() => setActivePage('tracking')}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600/20 border border-teal-500/40 px-2.5 py-1 text-xs font-bold text-teal-300 hover:bg-teal-600/30 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Navigation className="h-3.5 w-3.5 text-teal-400" />
+              <span>{t.quickTrack}</span>
+            </button>
+
+            {/* Reset Demo Data */}
             <button
               type="button"
               onClick={handleResetAllDemoData}
-              className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1 text-xs font-semibold text-orange-300 hover:bg-slate-700 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 border border-slate-700 px-2.5 py-1 text-xs font-semibold text-orange-300 hover:bg-slate-700 cursor-pointer whitespace-nowrap shrink-0"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Reset Demo Data
+              <span className="hidden sm:inline">{t.resetDemo}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Sticky Navigation Header (Improved Readability & Font Sizes) */}
+      {/* Sticky Navigation Header (With Flipkart-Style Triple-Line Control Menu) */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          {/* Brand Logo */}
-          <button
-            type="button"
-            onClick={() => setActivePage('home')}
-            className="flex items-center gap-3 text-left cursor-pointer"
-          >
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/20">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <span className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-                Seva<span className="text-orange-600">Setu</span>
+          {/* Triple-Line Menu Trigger + Brand Logo */}
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
+            <button
+              type="button"
+              onClick={() => setControlDrawerOpen(true)}
+              aria-label="Open Control Bar, My Bookings, Orders & Settings"
+              title="Open Control Hub (My Bookings, Orders, Certified Services & Settings)"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800 shadow-2xs transition hover:border-orange-400 hover:bg-orange-50/60 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Menu className="h-5 w-5 text-orange-600" />
+              <span className="hidden sm:inline text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                {t.menuButtonLabel}
               </span>
-              <span className="block text-xs sm:text-sm font-medium text-slate-500 -mt-0.5">
-                Home & Religious Services
-              </span>
-            </div>
-          </button>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActivePage('home')}
+              className="flex items-center gap-3 text-left cursor-pointer"
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/20">
+                <Sparkles className="h-6 w-6" />
+              </div>
+              <div>
+                <span className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                  Seva<span className="text-orange-600">Setu</span>
+                </span>
+                <span className="block text-xs sm:text-sm font-medium text-slate-500 -mt-0.5">
+                  {t.brandSubtitle}
+                </span>
+              </div>
+            </button>
+          </div>
 
           {/* Desktop Navigation Links */}
           <nav className="hidden lg:flex items-center gap-1.5" aria-label="Main Navigation">
             {(
               [
-                { id: 'home', label: 'Home' },
-                { id: 'services', label: 'Explore Services' },
+                { id: 'home', label: t.navHome },
+                { id: 'services', label: t.navServices },
                 {
                   id: 'bookings',
-                  label: 'My Bookings',
+                  label: t.navBookings,
                   badge: upcomingBookings.length,
                 },
-                { id: 'tracking', label: 'Live Tracking' },
-                { id: 'rewards', label: 'Rewards & Offers' },
+                { id: 'tracking', label: t.navTracking },
+                { id: 'rewards', label: t.navRewards },
               ] as const
             ).map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setActivePage(item.id)}
-                className={`relative rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold transition cursor-pointer ${
+                className={`relative rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
                   activePage === item.id
                     ? 'bg-orange-500/15 text-orange-600'
                     : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -913,28 +1299,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                const next = theme === 'light' ? 'dark' : 'light';
-                setTheme(next);
-                showToast(`Switched to ${next === 'dark' ? 'Dark' : 'Light'} Mode`);
-              }}
-              aria-label="Toggle Light or Dark Theme"
-              title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 cursor-pointer"
-            >
-              {theme === 'light' ? (
-                <Moon className="h-5 w-5 text-slate-700" />
-              ) : (
-                <Sun className="h-5 w-5 text-amber-400" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
                 setOnlyFavourites(true);
                 setActivePage('services');
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Heart className="h-4 w-4 fill-rose-500 text-rose-500" />
               <span>({favourites.length})</span>
@@ -956,7 +1324,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  title="Sign Out"
+                  title={t.signOut}
                   className="ml-1 rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
@@ -970,10 +1338,10 @@ export default function App() {
                   setAuthError(null);
                   setAuthModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <LogIn className="h-4 w-4 text-orange-600" />
-                <span>Sign In</span>
+                <span>{t.signIn}</span>
               </button>
             )}
 
@@ -983,9 +1351,9 @@ export default function App() {
                 setOnlyFavourites(false);
                 setActivePage('services');
               }}
-              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95 cursor-pointer"
+              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95 cursor-pointer whitespace-nowrap shrink-0"
             >
-              Book Service
+              {t.bookServiceBtn}
             </button>
           </div>
 
@@ -993,20 +1361,17 @@ export default function App() {
           <div className="flex md:hidden items-center gap-2">
             <button
               type="button"
-              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-              aria-label="Toggle Theme"
-              className="rounded-xl border border-slate-200 p-2.5 text-slate-700"
+              onClick={() => setControlDrawerOpen(true)}
+              aria-label="Open Control Hub Drawer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500/15 border border-orange-500/30 px-3 py-2 text-xs font-extrabold text-orange-600"
             >
-              {theme === 'light' ? (
-                <Moon className="h-5 w-5" />
-              ) : (
-                <Sun className="h-5 w-5 text-amber-400" />
-              )}
+              <Settings className="h-4 w-4" />
+              <span>Hub</span>
             </button>
             <button
               type="button"
               onClick={() => setMobileMenuOpen((prev) => !prev)}
-              aria-label="Toggle Menu"
+              aria-label="Toggle Navigation"
               className="rounded-xl border border-slate-200 p-2.5 text-slate-700 hover:bg-slate-100"
             >
               {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -1019,11 +1384,11 @@ export default function App() {
           <div className="md:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-2">
             {(
               [
-                { id: 'home', label: 'Home' },
-                { id: 'services', label: 'Explore Services & Professionals' },
-                { id: 'bookings', label: `My Bookings (${upcomingBookings.length} Upcoming)` },
-                { id: 'tracking', label: 'Live Service Tracking' },
-                { id: 'rewards', label: 'Loyalty Rewards & Promo Codes' },
+                { id: 'home', label: t.navHome },
+                { id: 'services', label: t.navServices },
+                { id: 'bookings', label: `${t.navBookings} (${upcomingBookings.length})` },
+                { id: 'tracking', label: t.navTracking },
+                { id: 'rewards', label: t.navRewards },
               ] as const
             ).map((item) => (
               <button
@@ -1047,14 +1412,14 @@ export default function App() {
               {currentUser ? (
                 <div className="flex flex-1 items-center justify-between rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm">
                   <span className="font-bold text-slate-900">
-                    Signed in: {currentUser.name}
+                    {currentUser.name}
                   </span>
                   <button
                     type="button"
                     onClick={handleSignOut}
                     className="font-bold text-rose-600"
                   >
-                    Sign Out
+                    {t.signOut}
                   </button>
                 </div>
               ) : (
@@ -1067,7 +1432,7 @@ export default function App() {
                   }}
                   className="w-full rounded-xl bg-slate-900 py-3 text-center text-sm font-bold text-white"
                 >
-                  Sign In / Sign Up / Link Google
+                  {t.signIn}
                 </button>
               )}
             </div>
@@ -1112,18 +1477,18 @@ export default function App() {
                   <div className="lg:col-span-7 space-y-6">
                     <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/10 px-4 py-1.5 text-sm font-bold text-orange-600">
                       <Sparkles className="h-4 w-4" />
-                      <span>One platform for everyday home services and trusted local religious services</span>
+                      <span>{t.heroBadge}</span>
                     </div>
 
                     <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl leading-[1.12]">
-                      Trusted services,{' '}
+                      {t.heroTitlePart1}{' '}
                       <span className="bg-gradient-to-r from-orange-600 to-rose-600 bg-clip-text text-transparent">
-                        right at your doorstep.
+                        {t.heroTitleHighlight}
                       </span>
                     </h1>
 
                     <p className="max-w-2xl text-base sm:text-lg text-slate-600 leading-relaxed">
-                      From Vedic Pandits for your Griha Pravesh puja to electricians, plumbers, deep cleaning squads, and at-home grooming—discover, book, and track everyday home repairs and sacred ceremonies in one place.
+                      {t.heroSubtitle}
                     </p>
 
                     {/* Primary Hero CTAs */}
@@ -1136,7 +1501,7 @@ export default function App() {
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-orange-500/25 hover:opacity-95 cursor-pointer"
                       >
-                        <span>Book a Service</span>
+                        <span>{t.heroPrimaryCta}</span>
                         <ArrowRight className="h-5 w-5" />
                       </button>
 
@@ -1148,7 +1513,7 @@ export default function App() {
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-6 py-3.5 text-base font-bold text-slate-800 hover:bg-slate-50 cursor-pointer"
                       >
-                        <span>Explore All Services</span>
+                        <span>{t.heroSecondaryCta}</span>
                       </button>
 
                       <button
@@ -1157,7 +1522,7 @@ export default function App() {
                         className="inline-flex items-center gap-2 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3.5 text-sm font-bold text-teal-600 hover:bg-teal-500/20 cursor-pointer"
                       >
                         <Navigation className="h-4 w-4 text-teal-600" />
-                        <span>Live Tracking Demo</span>
+                        <span>{t.heroTrackingCta}</span>
                       </button>
                     </div>
 
@@ -1166,23 +1531,23 @@ export default function App() {
                       <div>
                         <div className="flex items-center gap-1.5 text-base font-extrabold text-slate-900">
                           <Ticket className="h-4 w-4 text-orange-600" />
-                          <span>Sample Listings</span>
+                          <span>{t.trustSampleListings}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-0.5">8 service categories</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{t.trustCategoriesCount}</p>
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 text-base font-extrabold text-slate-900">
                           <IndianRupee className="h-4 w-4 text-orange-600" />
-                          <span>Clear Pricing</span>
+                          <span>{t.trustClearPricing}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-0.5">Starting at ₹199</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{t.trustStartingPrice}</p>
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 text-base font-extrabold text-slate-900">
                           <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                          <span>4.8★ Avg Rating</span>
+                          <span>{t.trustAvgRating}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-0.5">Interactive customer reviews</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{t.trustInteractiveReviews}</p>
                       </div>
                     </div>
                   </div>
@@ -1199,7 +1564,7 @@ export default function App() {
                       <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-900 p-4 text-white">
                         <div>
                           <span className="text-xs font-bold uppercase tracking-wider text-teal-400">
-                            Active Live Demo Booking
+                            {t.activeLiveBookingLabel}
                           </span>
                           <p className="text-base font-bold mt-0.5">
                             Acharya Vishwanath • Griha Pravesh Puja
@@ -1213,7 +1578,7 @@ export default function App() {
                           onClick={() => setActivePage('tracking')}
                           className="rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-teal-400 cursor-pointer"
                         >
-                          Track Live
+                          {t.trackLiveBtn}
                         </button>
                       </div>
                     </div>
@@ -1227,10 +1592,10 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
                 <div>
                   <span className="text-sm font-bold uppercase tracking-wider text-orange-600">
-                    8 Specialized Categories
+                    {t.categoriesKicker}
                   </span>
                   <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-1">
-                    What do you need today?
+                    {t.whatDoYouNeedTitle}
                   </h2>
                 </div>
                 <button
@@ -1241,13 +1606,16 @@ export default function App() {
                   }}
                   className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700 cursor-pointer"
                 >
-                  <span>View All 16 Sample Professionals</span>
+                  <span>{t.viewAllProsLink}</span>
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
 
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                {SERVICE_CATEGORIES.map((cat) => (
+                {SERVICE_CATEGORIES.map((cat) => {
+                  const localizedCat = t.categories[cat.id];
+                  const isCatCertified = isCertifiedCategory(cat.id);
+                  return (
                   <div
                     key={cat.id}
                     onClick={() => {
@@ -1270,7 +1638,7 @@ export default function App() {
                     <div className="relative h-44 w-full overflow-hidden">
                       <SafeImage
                         src={cat.imageUrl}
-                        alt={cat.name}
+                        alt={localizedCat.name}
                         fallbackLabel={cat.fallbackLabel}
                         className="h-full w-full transition duration-500 group-hover:scale-105"
                       />
@@ -1278,29 +1646,67 @@ export default function App() {
                         <span className="text-orange-400">
                           {renderCategoryIcon(cat.iconName, 'h-4 w-4')}
                         </span>
-                        <span>{cat.name}</span>
+                        <span>{localizedCat.name}</span>
                       </div>
+                      {isCatCertified && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCertifiedModalTarget({
+                              title: localizedCat.name,
+                              categoryName: localizedCat.name,
+                              catId: cat.id,
+                            });
+                          }}
+                          className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-xl bg-emerald-600/95 px-2.5 py-1 text-[11px] font-extrabold text-white shadow-md hover:bg-emerald-500 cursor-pointer whitespace-nowrap shrink-0"
+                          title={t.certifiedModalTitle}
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span>{t.certifiedBadge}</span>
+                        </button>
+                      )}
                       <div className="absolute bottom-3 right-3 rounded-lg bg-slate-900/90 px-3 py-1 text-xs font-extrabold text-white shadow">
-                        Starting at ₹{cat.startingPrice}
+                        {t.startingAt} ₹{cat.startingPrice}
                       </div>
                     </div>
 
                     <div className="flex flex-1 flex-col justify-between p-5">
                       <div>
-                        <p className="text-xs font-semibold text-orange-600">{cat.hindiSub}</p>
-                        <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">{cat.name}</h3>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-orange-600">{localizedCat.sub}</p>
+                          {isCatCertified && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCertifiedModalTarget({
+                                  title: localizedCat.name,
+                                  categoryName: localizedCat.name,
+                                  catId: cat.id,
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-500/20 cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                              <span>{t.certifiedBadge}</span>
+                            </button>
+                          )}
+                        </div>
+                        <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">{localizedCat.name}</h3>
                         <p className="mt-2 text-base text-slate-600 line-clamp-2 leading-relaxed">
-                          {cat.shortDescription}
+                          {localizedCat.desc}
                         </p>
                       </div>
 
                       <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100 text-sm font-bold text-orange-600 group-hover:text-orange-700">
-                        <span>Explore Professionals</span>
+                        <span>{t.exploreProsCta}</span>
                         <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -1310,10 +1716,10 @@ export default function App() {
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
                   <div>
                     <span className="text-sm font-bold uppercase tracking-wider text-teal-600">
-                      Customer Favourites • Illustrative Sample Listings
+                      {t.topRatedKicker}
                     </span>
                     <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-1">
-                      Top-Rated Professionals Near You
+                      {t.topRatedTitle}
                     </h2>
                   </div>
                   <button
@@ -1324,13 +1730,15 @@ export default function App() {
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
                   >
-                    See All 16 Professionals
+                    {t.seeAllProsBtn}
                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {professionalsWithDynamicStats.slice(0, 6).map((pro) => {
                     const isFav = favourites.includes(pro.id);
+                    const localizedCatName = t.categories[pro.categoryId]?.name || pro.categoryName;
+                    const proCertified = isCertifiedPro(pro);
                     return (
                       <div
                         key={pro.id}
@@ -1341,14 +1749,33 @@ export default function App() {
                             <SafeImage
                               src={pro.imageUrl}
                               alt={pro.name}
-                              fallbackLabel={pro.categoryName}
+                              fallbackLabel={localizedCatName}
                               className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-bold text-orange-600">
-                                  {pro.categoryName}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-bold text-orange-600">
+                                    {localizedCatName}
+                                  </span>
+                                  {proCertified && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setCertifiedModalTarget({
+                                          title: pro.name,
+                                          categoryName: localizedCatName,
+                                          pro,
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-extrabold text-emerald-700 hover:bg-emerald-500/25 cursor-pointer whitespace-nowrap shrink-0"
+                                      title={t.certifiedModalTitle}
+                                    >
+                                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                      <span>{t.certifiedBadge}</span>
+                                    </button>
+                                  )}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => toggleFavourite(pro.id)}
@@ -1399,10 +1826,10 @@ export default function App() {
                         <div className="mt-4 flex items-center justify-between pt-3.5 border-t border-slate-200/80">
                           <div>
                             <span className="block text-xs font-medium text-slate-500">
-                              Price from ₹{pro.priceInr}
+                              {t.priceFrom} ₹{pro.priceInr}
                             </span>
                             <span className="text-lg font-extrabold text-slate-900">
-                              Starting at ₹{pro.priceInr}
+                              {t.startingAt} ₹{pro.priceInr}
                             </span>
                           </div>
 
@@ -1412,14 +1839,14 @@ export default function App() {
                               onClick={() => setProfileModalProId(pro.id)}
                               className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                             >
-                              View Profile
+                              {t.viewProfileBtn}
                             </button>
                             <button
                               type="button"
                               onClick={() => openBookingModal(pro)}
                               className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
                             >
-                              Book Now
+                              {t.bookNowBtn}
                             </button>
                           </div>
                         </div>
@@ -1570,16 +1997,16 @@ export default function App() {
           </div>
         )}
 
-        {/* ==================== 2. EXPLORE SERVICES & PROFESSIONALS ==================== */}
+        {/* ==================== 2. SERVICES DIRECTORY PAGE ==================== */}
         {activePage === 'services' && (
           <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  Discover Home & Religious Service Professionals
+                  {t.servicesPageTitle}
                 </h1>
                 <p className="text-base text-slate-600 mt-1">
-                  All profiles below are clearly labeled sample listings for the hackathon prototype. Final price confirmed by the professional.
+                  {t.servicesPageSubtitle}
                 </p>
               </div>
               <button
@@ -1591,6 +2018,7 @@ export default function App() {
                   setMinRatingFilter(0);
                   setMaxPriceFilter(5000);
                   setOnlyFavourites(false);
+                  setOnlyCertified(false);
                   setSortBy('recommended');
                 }}
                 className="self-start rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
@@ -1610,7 +2038,7 @@ export default function App() {
                     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                All Categories (16)
+                {t.allCategoriesBtn}
               </button>
               {SERVICE_CATEGORIES.map((cat) => (
                 <button
@@ -1624,7 +2052,7 @@ export default function App() {
                   }`}
                 >
                   {renderCategoryIcon(cat.iconName, 'h-4 w-4')}
-                  <span>{cat.name}</span>
+                  <span>{t.categories[cat.id]?.name || cat.name}</span>
                 </button>
               ))}
             </div>
@@ -1638,7 +2066,7 @@ export default function App() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search name, service, puja, plumber, Noida..."
+                    placeholder={t.searchPlaceholder}
                     aria-label="Search professionals"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 py-2.5 text-sm text-slate-900 focus:border-orange-500 focus:outline-none"
                   />
@@ -1646,7 +2074,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Location Zone
+                    {t.locationZoneLabel}
                   </label>
                   <select
                     value={cityFilter}
@@ -1654,7 +2082,7 @@ export default function App() {
                     aria-label="Filter by city"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800"
                   >
-                    <option value="All">All NCR Zones</option>
+                    <option value="All">{t.allZones}</option>
                     <option value="Noida">Noida & Greater Noida</option>
                     <option value="Delhi">Delhi (South & Dwarka)</option>
                     <option value="Gurgaon">Gurgaon</option>
@@ -1664,7 +2092,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Min Rating
+                    {t.minRatingLabel}
                   </label>
                   <select
                     value={minRatingFilter}
@@ -1680,7 +2108,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Max Price (₹)
+                    {t.maxPriceLabel}
                   </label>
                   <select
                     value={maxPriceFilter}
@@ -1697,7 +2125,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Sort By
+                    {t.sortByLabel}
                   </label>
                   <select
                     value={sortBy}
@@ -1719,22 +2147,39 @@ export default function App() {
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
                 <span className="text-sm font-medium text-slate-600">
-                  Showing <strong>{filteredProfessionals.length}</strong> sample professionals
+                  <strong>{filteredProfessionals.length}</strong> {t.showingProsLabel}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setOnlyFavourites((prev) => !prev)}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold transition cursor-pointer ${
-                    onlyFavourites
-                      ? 'bg-rose-600 text-white'
-                      : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <Heart
-                    className={`h-4 w-4 ${onlyFavourites ? 'fill-white' : 'text-rose-500'}`}
-                  />
-                  <span>{onlyFavourites ? 'Showing Saved Favourites' : 'Filter Favourites Only'}</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnlyCertified((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      onlyCertified
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20'
+                    }`}
+                  >
+                    <ShieldCheck
+                      className={`h-4 w-4 ${onlyCertified ? 'text-white' : 'text-emerald-600'}`}
+                    />
+                    <span>{onlyCertified ? t.showingCertifiedBtn : t.certifiedFilterBtn}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOnlyFavourites((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      onlyFavourites
+                        ? 'bg-rose-600 text-white'
+                        : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Heart
+                      className={`h-4 w-4 ${onlyFavourites ? 'fill-white' : 'text-rose-500'}`}
+                    />
+                    <span>{onlyFavourites ? t.showingFavouritesBtn : t.filterFavouritesBtn}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1753,6 +2198,8 @@ export default function App() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {filteredProfessionals.map((pro) => {
                   const isFav = favourites.includes(pro.id);
+                  const localizedCatName = t.categories[pro.categoryId]?.name || pro.categoryName;
+                  const proCertified = isCertifiedPro(pro);
                   return (
                     <div
                       key={pro.id}
@@ -1763,14 +2210,33 @@ export default function App() {
                           <SafeImage
                             src={pro.imageUrl}
                             alt={pro.name}
-                            fallbackLabel={pro.categoryName}
+                            fallbackLabel={localizedCatName}
                             className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">
-                              <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-bold text-orange-600">
-                                {pro.categoryName}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-bold text-orange-600">
+                                  {localizedCatName}
+                                </span>
+                                {proCertified && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCertifiedModalTarget({
+                                        title: pro.name,
+                                        categoryName: localizedCatName,
+                                        pro,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-extrabold text-emerald-700 hover:bg-emerald-500/25 cursor-pointer whitespace-nowrap shrink-0"
+                                    title={t.certifiedModalTitle}
+                                  >
+                                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                    <span>{t.certifiedBadge}</span>
+                                  </button>
+                                )}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => toggleFavourite(pro.id)}
@@ -1830,10 +2296,10 @@ export default function App() {
                       <div className="mt-4 flex items-center justify-between pt-3.5 border-t border-slate-100">
                         <div>
                           <span className="block text-xs font-medium text-slate-500">
-                            Price from ₹{pro.priceInr}
+                            {t.priceFrom} ₹{pro.priceInr}
                           </span>
                           <span className="text-lg font-extrabold text-slate-900">
-                            Starting at ₹{pro.priceInr}
+                            {t.startingAt} ₹{pro.priceInr}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1842,14 +2308,14 @@ export default function App() {
                             onClick={() => setProfileModalProId(pro.id)}
                             className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                           >
-                            View Profile
+                            {t.viewProfileBtn}
                           </button>
                           <button
                             type="button"
                             onClick={() => openBookingModal(pro)}
                             className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
                           >
-                            Book Now
+                            {t.bookNowBtn}
                           </button>
                         </div>
                       </div>
@@ -1867,10 +2333,10 @@ export default function App() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  My Bookings Dashboard
+                  {t.bookingsPageTitle}
                 </h1>
                 <p className="text-base text-slate-600 mt-1">
-                  Manage upcoming appointments, track live progress, reschedule slots, or leave feedback on completed services.
+                  {t.bookingsPageSubtitle}
                 </p>
               </div>
               <button
@@ -1878,16 +2344,16 @@ export default function App() {
                 onClick={() => setActivePage('services')}
                 className="self-start rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white shadow-xs cursor-pointer"
               >
-                + Book Another Service
+                {t.bookAnotherServiceBtn}
               </button>
             </div>
 
             <div className="flex border-b border-slate-200 gap-2">
               {(
                 [
-                  { id: 'Upcoming', count: upcomingBookings.length },
-                  { id: 'Completed', count: completedBookings.length },
-                  { id: 'Cancelled', count: cancelledBookings.length },
+                  { id: 'Upcoming', label: t.tabUpcoming, count: upcomingBookings.length },
+                  { id: 'Completed', label: t.tabCompleted, count: completedBookings.length },
+                  { id: 'Cancelled', label: t.tabCancelled, count: cancelledBookings.length },
                 ] as const
               ).map((tab) => (
                 <button
@@ -1900,7 +2366,7 @@ export default function App() {
                       : 'border-transparent text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <span>{tab.id}</span>
+                  <span>{tab.label}</span>
                   <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-extrabold text-slate-800">
                     {tab.count}
                   </span>
@@ -1914,27 +2380,58 @@ export default function App() {
                 : bookingTab === 'Completed'
                 ? completedBookings
                 : cancelledBookings
-              ).map((bk) => (
+              ).map((bk) => {
+                const isHighlighted = highlightedBookingId === bk.id;
+                const isCopied = copiedBookingId === bk.id;
+                const localizedCatName = t.categories[bk.categoryId]?.name || bk.categoryName;
+                return (
                 <div
                   key={bk.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition"
+                  id={`booking-card-${bk.id}`}
+                  className={`rounded-2xl border bg-white p-5 shadow-xs transition ${
+                    isHighlighted
+                      ? 'border-orange-500 ring-2 ring-orange-500/30'
+                      : 'border-slate-200'
+                  }`}
                 >
+                  {isHighlighted && (
+                    <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3.5 py-2 text-xs font-semibold text-orange-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Share2 className="h-3.5 w-3.5 text-orange-600" />
+                        {t.sharedHighlightBanner} ({bk.reference})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHighlightedBookingId(null);
+                          try {
+                            window.history.replaceState({}, '', window.location.pathname);
+                          } catch {
+                            // Ignore history error
+                          }
+                        }}
+                        className="font-bold text-orange-700 hover:underline cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        {t.dismissBtn}
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-start gap-4">
                       <SafeImage
                         src={bk.professionalPhoto}
                         alt={bk.professionalName}
-                        fallbackLabel={bk.categoryName}
+                        fallbackLabel={localizedCatName}
                         className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
                       />
                       <div className="space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-0.5 font-mono text-xs sm:text-sm font-bold text-slate-700">
                             <Ticket className="h-3.5 w-3.5 text-orange-600" />
-                            Booking Ticket: {bk.reference}
+                            {t.bookingTicketLabel}: {bk.reference}
                           </span>
                           <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs font-bold text-orange-600">
-                            {bk.categoryName}
+                            {localizedCatName}
                           </span>
                           {bk.tabStatus === 'Upcoming' && (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/15 px-3 py-0.5 text-xs font-bold text-teal-600">
@@ -1980,9 +2477,9 @@ export default function App() {
                     <div className="flex flex-col sm:items-end justify-between gap-3 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
                       <div className="sm:text-right">
                         <span className="block text-xs font-medium text-slate-400">
-                          Estimated cost
+                          {t.estimatedCostLabel}
                         </span>
-                        <span className="text-xl font-extrabold text-slate-900">
+                        <span className="text-xl font-extrabold text-slate-900 tabular-nums">
                           ₹{bk.totalPrice}
                         </span>
                         <span className="block text-xs text-slate-500">
@@ -1993,10 +2490,33 @@ export default function App() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setProfileModalProId(bk.professionalId)}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                          onClick={() => handleShareBooking(bk)}
+                          aria-label={`Share booking ${bk.reference}`}
+                          className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                            isCopied
+                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
+                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-orange-300'
+                          }`}
                         >
-                          View Provider
+                          {isCopied ? (
+                            <>
+                              <Check className="h-4 w-4 text-emerald-600" />
+                              <span>{t.copiedBtn}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Share2 className="h-4 w-4 text-orange-600" />
+                              <span>{t.shareBtn}</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setProfileModalProId(bk.professionalId)}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          {t.viewProviderBtn}
                         </button>
 
                         {bk.tabStatus === 'Upcoming' && (
@@ -2009,9 +2529,9 @@ export default function App() {
                                 setNewRescheduleSlot(bk.timeSlot);
                                 setRescheduleError(null);
                               }}
-                              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-sm font-semibold text-amber-600 hover:bg-amber-500/20 cursor-pointer"
+                              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-sm font-semibold text-amber-600 hover:bg-amber-500/20 cursor-pointer whitespace-nowrap shrink-0"
                             >
-                              Reschedule
+                              {t.rescheduleBtn}
                             </button>
 
                             <button
@@ -2020,9 +2540,9 @@ export default function App() {
                                 setCancelModalBooking(bk);
                                 setCancelReason('Change of plans — will rebook later');
                               }}
-                              className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-500/20 cursor-pointer"
+                              className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-500/20 cursor-pointer whitespace-nowrap shrink-0"
                             >
-                              Cancel Booking
+                              {t.cancelBookingBtn}
                             </button>
 
                             <button
@@ -2031,10 +2551,10 @@ export default function App() {
                                 setSelectedTrackingBookingId(bk.id);
                                 setActivePage('tracking');
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white shadow-xs hover:bg-teal-500 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white shadow-xs hover:bg-teal-500 cursor-pointer whitespace-nowrap shrink-0"
                             >
                               <Navigation className="h-4 w-4" />
-                              Track Live
+                              {t.trackLiveBtn}
                             </button>
                           </>
                         )}
@@ -2049,9 +2569,9 @@ export default function App() {
                                 );
                                 if (pro) openBookingModal(pro);
                               }}
-                              className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-bold text-orange-600 cursor-pointer"
+                              className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-bold text-orange-600 cursor-pointer whitespace-nowrap shrink-0"
                             >
-                              Book Again
+                              {t.bookAgainBtn}
                             </button>
 
                             <button
@@ -2064,10 +2584,10 @@ export default function App() {
                                   bk.feedback?.tags ?? ['Professional behaviour', 'On time']
                                 );
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer whitespace-nowrap shrink-0"
                             >
                               <MessageSquarePlus className="h-4 w-4" />
-                              {bk.feedback ? 'Edit Feedback' : 'Leave Feedback'}
+                              {bk.feedback ? t.editFeedbackBtn : t.leaveFeedbackBtn}
                             </button>
                           </>
                         )}
@@ -2081,16 +2601,17 @@ export default function App() {
                               );
                               if (pro) openBookingModal(pro);
                             }}
-                            className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
+                            className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white shadow-xs hover:opacity-95 cursor-pointer whitespace-nowrap shrink-0"
                           >
-                            Book Again
+                            {t.bookAgainBtn}
                           </button>
                         )}
                       </div>
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2101,10 +2622,10 @@ export default function App() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  Live Service Tracking & Doorstep Navigation
+                  {t.trackingPageTitle}
                 </h1>
                 <p className="text-base text-slate-600 mt-1">
-                  Select any active booking below to simulate real-time route movement and status progression.
+                  {t.trackingPageSubtitle}
                 </p>
               </div>
 
@@ -2158,10 +2679,10 @@ export default function App() {
           <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-8">
             <div>
               <span className="text-sm font-bold uppercase tracking-wider text-orange-600">
-                SevaSetu Loyalty & Savings
+                {t.rewardsPageKicker}
               </span>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-1">
-                Rewards, Promo Codes & Demo Gift Cards
+                {t.rewardsPageTitle}
               </h1>
             </div>
 
@@ -2210,6 +2731,490 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* ==================== FLIPKART-STYLE TRIPLE-LINE CONTROL BAR & ACCOUNT DRAWER ==================== */}
+      {controlDrawerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.drawerTitle}
+          className="fixed inset-0 z-50 flex bg-slate-950/65 backdrop-blur-xs"
+          onClick={() => setControlDrawerOpen(false)}
+        >
+          <div
+            className="relative flex h-full w-full max-w-sm flex-col bg-white shadow-2xl border-r border-slate-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Flipkart-Style Top Account Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-5 py-5 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-rose-500 text-white font-extrabold text-lg shadow-md">
+                    {currentUser ? currentUser.name.charAt(0).toUpperCase() : <User className="h-5 w-5" />}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold leading-tight">
+                      {currentUser ? currentUser.name : 'Welcome to SevaSetu'}
+                    </h2>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      {currentUser ? currentUser.email : t.drawerTitle}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setControlDrawerOpen(false)}
+                  aria-label="Close control menu"
+                  className="rounded-xl p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Account Quick Sign In / Loyalty Pill */}
+              <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-slate-800/90 px-3.5 py-2.5 border border-slate-700">
+                <div className="flex items-center gap-2 text-xs">
+                  <Award className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span className="font-semibold text-slate-200">
+                    Plus Loyalty: <strong className="text-teal-400">{completedCount}/{loyaltyTarget}</strong> Orders
+                  </span>
+                </div>
+                {currentUser ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSignOut();
+                      setControlDrawerOpen(false);
+                    }}
+                    className="rounded-lg bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-300 hover:bg-rose-500/30 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    {t.signOut}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setControlDrawerOpen(false);
+                      setAuthMode('signin');
+                      setAuthError(null);
+                      setAuthModalOpen(true);
+                    }}
+                    className="rounded-lg bg-orange-500 px-3 py-1 text-xs font-bold text-white hover:bg-orange-600 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    {t.signIn}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Drawer Scrollable Body */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-200">
+              {/* Section 1: My Orders, Bookings & Activity (Flipkart-style) */}
+              <div className="p-4 space-y-1.5">
+                <p className="px-2 pb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {t.drawerMyOrdersSection}
+                </p>
+
+                {/* My Bookings (Upcoming) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePage('bookings');
+                    setBookingTab('Upcoming');
+                    setControlDrawerOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-800 hover:bg-orange-50/70 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <Calendar className="h-4 w-4 text-orange-600 shrink-0" />
+                    <span>{t.drawerMyBookings}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-extrabold text-orange-600">
+                      {upcomingBookings.length}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </span>
+                </button>
+
+                {/* My Orders & History (Completed Orders) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePage('bookings');
+                    setBookingTab('Completed');
+                    setControlDrawerOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-800 hover:bg-orange-50/70 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <ShoppingBag className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>{t.drawerMyOrdersHistory}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-extrabold text-emerald-600">
+                      {completedBookings.length}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </span>
+                </button>
+
+                {/* Track Active Order */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePage('tracking');
+                    setControlDrawerOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-800 hover:bg-orange-50/70 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <Navigation className="h-4 w-4 text-teal-600 shrink-0" />
+                    <span>{t.drawerTrackOrder}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-bold text-teal-600">
+                      Live
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </span>
+                </button>
+
+                {/* SevaSetu Certified Services */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory('all');
+                    setOnlyFavourites(false);
+                    setOnlyCertified(true);
+                    setActivePage('services');
+                    setControlDrawerOpen(false);
+                    showToast('Showing SevaSetu Certified professionals');
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-800 hover:bg-emerald-50/70 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>{t.drawerCertifiedServices}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-extrabold text-emerald-600">
+                      Verified
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </span>
+                </button>
+
+                {/* My Wishlist / Favourites */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory('all');
+                    setOnlyCertified(false);
+                    setOnlyFavourites(true);
+                    setActivePage('services');
+                    setControlDrawerOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-800 hover:bg-rose-50/70 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <Heart className="h-4 w-4 text-rose-500 fill-rose-500 shrink-0" />
+                    <span>{t.drawerWishlist}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded-full bg-rose-500/15 px-2.5 py-0.5 text-xs font-extrabold text-rose-600">
+                      {favourites.length}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </span>
+                </button>
+
+                {/* Coupons, Rewards & Gift Cards */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePage('rewards');
+                    setControlDrawerOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-800 hover:bg-orange-50/70 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <Award className="h-4 w-4 text-amber-500 shrink-0" />
+                    <span>{t.drawerRewards}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                </button>
+              </div>
+
+              {/* Section 2: App Settings & Preferences Control Bar */}
+              <div className="p-4 space-y-4">
+                <p className="px-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Settings className="h-3.5 w-3.5 text-orange-600" />
+                  <span>{t.drawerSettingsSection}</span>
+                </p>
+
+                {/* Setting 1: App Language (English / Hindi / Bengali) */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Globe className="h-4 w-4 text-orange-600" />
+                      <span>{t.languageLabel}</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500 uppercase">{appLang}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {LANGUAGE_OPTIONS.map((langOpt) => {
+                      const active = appLang === langOpt.code;
+                      return (
+                        <button
+                          key={langOpt.code}
+                          type="button"
+                          onClick={() => handleAppLanguageChange(langOpt.code)}
+                          className={`rounded-xl py-2 text-xs font-bold transition cursor-pointer ${
+                            active
+                              ? 'bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-xs'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {langOpt.nativeLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Setting 2: Theme Mode & Text Size Readability */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <span className="block text-xs font-bold text-slate-700">Theme</span>
+                    <div className="grid grid-cols-2 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setTheme('light')}
+                        className={`inline-flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-bold cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-amber-400 text-slate-950'
+                            : 'bg-white border border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <Sun className="h-3.5 w-3.5" />
+                        <span>{t.themeLight}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTheme('dark')}
+                        className={`inline-flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-bold cursor-pointer ${
+                          theme === 'dark'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white border border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <Moon className="h-3.5 w-3.5" />
+                        <span>{t.themeDark}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <span className="block text-xs font-bold text-slate-700">{t.textSizeLabel}</span>
+                    <div className="grid grid-cols-2 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setTextSize('normal')}
+                        className={`rounded-lg py-1.5 text-xs font-bold cursor-pointer ${
+                          textSize === 'normal'
+                            ? 'bg-slate-800 text-white'
+                            : 'bg-white border border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {t.textNormal}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTextSize('large')}
+                        className={`rounded-lg py-1.5 text-xs font-bold cursor-pointer ${
+                          textSize === 'large'
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-white border border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {t.textLarge}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Setting 3: Default NCR Service Zone */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+                  <label
+                    htmlFor="drawer-zone-select"
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-700"
+                  >
+                    <MapPin className="h-3.5 w-3.5 text-teal-600" />
+                    <span>{t.locationZoneLabel}</span>
+                  </label>
+                  <select
+                    id="drawer-zone-select"
+                    value={cityFilter}
+                    onChange={(e) => {
+                      setCityFilter(e.target.value);
+                      showToast(
+                        e.target.value === 'All'
+                          ? 'Showing services for all NCR zones'
+                          : `Default service zone set to ${e.target.value}`
+                      );
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800"
+                  >
+                    <option value="All">{t.allZones}</option>
+                    <option value="Noida">Noida & Greater Noida</option>
+                    <option value="Delhi">Delhi (South & Dwarka)</option>
+                    <option value="Gurgaon">Gurgaon</option>
+                    <option value="Ghaziabad">Ghaziabad</option>
+                  </select>
+                </div>
+
+                {/* Setting 4: Doorstep SMS & Order Alerts Toggle */}
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <Bell className="h-4 w-4 text-orange-600 shrink-0" />
+                    <span className="text-xs font-bold text-slate-800">
+                      {t.drawerNotifications}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={smsAlertsEnabled}
+                    onClick={() => {
+                      setSmsAlertsEnabled((prev) => {
+                        const next = !prev;
+                        showToast(
+                          next
+                            ? 'Doorstep SMS & Live Order Alerts enabled'
+                            : 'Doorstep SMS & Live Order Alerts muted'
+                        );
+                        return next;
+                      });
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition cursor-pointer ${
+                      smsAlertsEnabled ? 'bg-emerald-600' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                        smsAlertsEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Setting 5: Reset Demo Data */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleResetAllDemoData();
+                    setControlDrawerOpen(false);
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 py-2.5 text-xs font-extrabold text-orange-600 hover:bg-orange-500/20 cursor-pointer"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  <span>{t.resetDemo}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== SEVASETU CERTIFIED ASSURANCE MODAL ==================== */}
+      {certifiedModalTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.certifiedModalTitle}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-xs"
+          onClick={() => setCertifiedModalTarget(null)}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 px-6 py-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-xs">
+                  <ShieldCheck className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-100">
+                    {t.certifiedBadge}
+                  </span>
+                  <h2 className="text-lg font-extrabold leading-tight">
+                    {certifiedModalTarget.title}
+                  </h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCertifiedModalTarget(null)}
+                className="rounded-lg p-1 text-emerald-100 hover:bg-white/15 hover:text-white cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {t.certifiedModalSubtitle}
+              </p>
+
+              <div className="space-y-2.5 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+                {[
+                  '100% Government ID & Background Checked Professional',
+                  'Vetted Skill Assessment & Authentic Materials Guarantee',
+                  'Upfront Transparent Pricing — Zero Hidden Doorstep Charges',
+                  '7-Day Post-Service Support & Free Re-Visit Assurance',
+                ].map((point) => (
+                  <div key={point} className="flex items-start gap-2.5 text-xs sm:text-sm font-semibold text-slate-800">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>{point}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (certifiedModalTarget.catId) {
+                      setSelectedCategory(certifiedModalTarget.catId);
+                    }
+                    setOnlyCertified(true);
+                    setActivePage('services');
+                    setCertifiedModalTarget(null);
+                  }}
+                  className="rounded-xl border border-emerald-600/30 bg-emerald-500/10 px-4 py-2.5 text-xs sm:text-sm font-bold text-emerald-700 hover:bg-emerald-500/20 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  {t.certifiedFilterBtn}
+                </button>
+                {certifiedModalTarget.pro && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pro = certifiedModalTarget.pro!;
+                      setCertifiedModalTarget(null);
+                      openBookingModal(pro);
+                    }}
+                    className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2.5 text-xs sm:text-sm font-bold text-white shadow-sm hover:opacity-95 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    {t.bookNowBtn}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ==================== AUTHENTICATION MODAL ==================== */}
       {authModalOpen && (
@@ -2881,6 +3886,8 @@ export default function App() {
 
       {/* Interactive Multilingual AI Assistant Widget */}
       <ChatbotWidget
+        externalLanguage={appLang}
+        onLanguageChange={(lang) => handleAppLanguageChange(lang)}
         onSelectCategory={(catId) => {
           setSelectedCategory(catId);
           setOnlyFavourites(false);
