@@ -36,57 +36,81 @@ interface ChatMessage {
 const LANG_STORAGE_KEY = 'sevasetu_chat_lang_v1';
 const BOOKINGS_STORAGE_KEY = 'sevasetu_bookings_v1';
 
-// Rich keyword dictionary across English, Hindi (Devanagari + Hinglish), and Bengali (Bangla + Banglish)
-const CATEGORY_SYNONYMS: Record<ServiceCategoryId, string[]> = {
-  priest: [
-    'pandit', 'priest', 'puja', 'pooja', 'havan', 'wedding', 'vivah', 'griha pravesh',
-    'satyanarayan', 'astrology', 'katha', 'mantra', 'panditji', 'purohit',
-    'पंडित', 'पूजा', 'हवन', 'शादी', 'गृह प्रवेश', 'कथा',
-    'পুরোহিত', 'পূজা', 'পুজো', 'বিয়ে', 'গৃহপ্রবেশ', 'যজ্ঞ',
-  ],
-  housekeeping: [
-    'clean', 'cleaning', 'housekeeping', 'maid', 'deep clean', 'sofa', 'bathroom',
-    'kitchen', 'sanitization', 'mop', 'dusting', 'safai', 'jhadu',
-    'सफाई', 'झाड़ू', 'पोछा', 'क्लीनिंग', 'हाउसकीपिंग',
-    'পরিষ্কার', 'সাফাই', 'ক্লিনিং', 'ঘর পরিষ্কার',
-  ],
-  plumbing: [
-    'plumber', 'plumbing', 'tap', 'leak', 'leaking', 'pipe', 'water', 'drain',
-    'sink', 'toilet', 'flush', 'geyser', 'motor', 'tank', 'nal', 'paani',
-    'प्लंबर', 'नल', 'पानी', 'पाइप', 'लीक', 'टंकी',
-    'প্লাম্বার', 'কল', 'জল', 'পাইপ', 'লিক',
-  ],
-  barber: [
-    'barber', 'salon', 'hair', 'haircut', 'beard', 'shave', 'trim', 'grooming',
-    'facial', 'massage', 'spa', 'stylist', 'nai', 'baal',
-    'नाई', 'बाल', 'हेयरकट', 'दाढ़ी', 'सैलून', 'मसाज',
-    'নাপিত', 'চুল', 'দাড়ি', 'সেলুন', 'হেয়ারকাট',
-  ],
-  electrician: [
-    'electrician', 'electric', 'electrical', 'fan', 'light', 'switch', 'socket',
-    'wiring', 'mcb', 'fuse', 'inverter', 'ac', 'cooler', 'power', 'short circuit', 'bijli', 'pankha',
-    'इलेक्ट्रीशियन', 'बिजली', 'पंखा', 'लाइट', 'स्विच', 'वायरिंग',
-    'ইলেকট্রিশিয়ান', 'বিজলি', 'পাখা', 'ফ্যান', 'লাইট', 'সুইচ', 'কারেন্ট',
-  ],
-  carpenter: [
-    'carpenter', 'carpentry', 'wood', 'door', 'window', 'lock', 'hinge', ' cupboard',
-    'wardrobe', 'bed', 'furniture', 'table', 'chair', 'drill', 'badhai', 'lakdi',
-    'कारपेंटर', 'बढ़ई', 'लकड़ी', 'दरवाजा', 'फर्नीचर', 'ताला',
-    'ছুতার', 'কাঠमिस्त्री', 'কাঠ', 'দরজা', 'আসবাবপত্র', 'ফার্নিচার',
-  ],
-  painter: [
-    'painter', 'painting', 'paint', 'wall', 'whitewash', 'color', 'colour',
-    'putty', 'texture', 'waterproofing', 'damp', 'rang', 'putai',
-    'पेंटर', 'पेंट', 'पेंटिंग', 'रंग', 'दीवार', 'पुताई',
-    'পেইন্টার', 'রঙ', 'দেওয়াল', 'পেইন্টিং',
-  ],
-  masonry: [
-    'mason', 'masonry', 'tile', 'tiles', 'brick', 'cement', 'plaster',
-    'flooring', 'marble', 'granite', 'renovation', 'construction', 'rajmistri', 'mistri',
-    'राजमिस्त्री', 'मिस्त्री', 'टाइल', 'ईंट', 'सीमेंट', 'प्लास्टर',
-    'রাজমিস্ত্রি', 'মিস্ত্রি', 'টাইলস', 'ইট', 'সিমেন্ট',
-  ],
-};
+// Flexible keyword map supporting both 'plumber'/'plumbing', 'mason'/'masonry', etc.
+const KEYWORD_GROUPS: Array<{ matchTerms: string[]; keywords: string[] }> = [
+  {
+    matchTerms: ['priest', 'pandit', 'puja', 'spiritual', 'religious'],
+    keywords: [
+      'pandit', 'priest', 'puja', 'pooja', 'havan', 'wedding', 'vivah', 'griha pravesh',
+      'satyanarayan', 'astrology', 'katha', 'mantra', 'panditji', 'purohit',
+      'पंडित', 'पूजा', 'हवन', 'शादी', 'गृह प्रवेश', 'कथा',
+      'পুরোহিত', 'পূজা', 'পুজো', 'বিয়ে', 'গৃহপ্রবেশ', 'যজ্ঞ',
+    ],
+  },
+  {
+    matchTerms: ['housekeeping', 'cleaning', 'clean', 'maid'],
+    keywords: [
+      'clean', 'cleaning', 'housekeeping', 'maid', 'deep clean', 'sofa', 'bathroom',
+      'kitchen', 'sanitization', 'mop', 'dusting', 'safai', 'jhadu',
+      'सफाई', 'झाड़ू', 'पोछा', 'क्लीनिंग', 'हाउसकीपिंग',
+      'পরিষ্কার', 'সাফাই', 'ক্লিনিং', 'ঘর পরিষ্কার',
+    ],
+  },
+  {
+    matchTerms: ['plumber', 'plumbing', 'water', 'pipe'],
+    keywords: [
+      'plumber', 'plumbing', 'tap', 'leak', 'leaking', 'pipe', 'water', 'drain',
+      'sink', 'toilet', 'flush', 'geyser', 'motor', 'tank', 'nal', 'paani',
+      'प्लंबर', 'नल', 'पानी', 'पाइप', 'लीक', 'टंकी',
+      'প্লাম্বার', 'কল', 'জল', 'পাইপ', 'লিক',
+    ],
+  },
+  {
+    matchTerms: ['barber', 'salon', 'grooming', 'hair'],
+    keywords: [
+      'barber', 'salon', 'hair', 'haircut', 'beard', 'shave', 'trim', 'grooming',
+      'facial', 'massage', 'spa', 'stylist', 'nai', 'baal',
+      'नाई', 'बाल', 'हेयरकट', 'दाढ़ी', 'सैलून', 'मसाज',
+      'নাপিত', 'চুল', 'দাড়ি', 'সেলুন', 'হেয়ারকাট',
+    ],
+  },
+  {
+    matchTerms: ['electrician', 'electrical', 'electric'],
+    keywords: [
+      'electrician', 'electric', 'electrical', 'fan', 'light', 'switch', 'socket',
+      'wiring', 'mcb', 'fuse', 'inverter', 'ac', 'cooler', 'power', 'short circuit', 'bijli', 'pankha',
+      'इलेक्ट्रीशियन', 'बिजली', 'पंखा', 'लाइट', 'स्विच', 'वायरिंग',
+      'ইলেকট্রিশিয়ান', 'বিজলি', 'পাখা', 'ফ্যান', 'লাইট', 'সুইচ', 'কারেন্ট',
+    ],
+  },
+  {
+    matchTerms: ['carpenter', 'carpentry', 'wood', 'furniture'],
+    keywords: [
+      'carpenter', 'carpentry', 'wood', 'door', 'window', 'lock', 'hinge', 'cupboard',
+      'wardrobe', 'bed', 'furniture', 'table', 'chair', 'drill', 'badhai', 'lakdi',
+      'कारपेंटर', 'बढ़ई', 'लकड़ी', 'दरवाजा', 'फर्नीचर', 'ताला',
+      'ছুতার', 'কাঠমিস্ত্রি', 'কাঠ', 'দরজা', 'আসবাবপত্র', 'ফার্নিচার',
+    ],
+  },
+  {
+    matchTerms: ['painter', 'painting', 'paint'],
+    keywords: [
+      'painter', 'painting', 'paint', 'wall', 'whitewash', 'color', 'colour',
+      'putty', 'texture', 'waterproofing', 'damp', 'rang', 'putai',
+      'पेंटर', 'पेंट', 'पेंटिंग', 'रंग', 'दीवार', 'पुताई',
+      'পেইন্টার', 'রঙ', 'দেওয়াল', 'পেইন্টিং',
+    ],
+  },
+  {
+    matchTerms: ['masonry', 'mason', 'tile', 'civil', 'construction'],
+    keywords: [
+      'mason', 'masonry', 'tile', 'tiles', 'brick', 'cement', 'plaster',
+      'flooring', 'marble', 'granite', 'renovation', 'construction', 'rajmistri', 'mistri',
+      'राजमिस्त्री', 'मिस्त्री', 'टाइल', 'ईंट', 'सीमेंट', 'प्लास्टर',
+      'রাজমিস্ত্রি', 'মিস্ত্রি', 'টাইলস', 'ইট', 'সিমেন্ট',
+    ],
+  },
+];
 
 const UI_STRINGS: Record<
   SupportedLanguage,
@@ -261,21 +285,32 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
     ]);
   };
 
-  // Detect if user query mentions a specific service category
+  // Dynamically match user text to the actual ServiceCategoryId in SERVICE_CATEGORIES
   const detectCategory = (q: string): ServiceCategoryId | null => {
     const lower = q.toLowerCase();
-    for (const [catId, words] of Object.entries(CATEGORY_SYNONYMS) as [
-      ServiceCategoryId,
-      string[],
-    ][]) {
-      if (words.some((w) => lower.includes(w.toLowerCase()))) {
-        return catId;
+
+    for (const group of KEYWORD_GROUPS) {
+      if (group.keywords.some((kw) => lower.includes(kw.toLowerCase()))) {
+        const foundCat = SERVICE_CATEGORIES.find((cat) => {
+          const idStr = String(cat.id).toLowerCase();
+          const nameStr = cat.name.toLowerCase();
+          return group.matchTerms.some(
+            (term) => idStr.includes(term) || nameStr.includes(term)
+          );
+        });
+        if (foundCat) return foundCat.id;
       }
     }
-    return null;
+
+    // Fallback check against SERVICE_CATEGORIES names directly
+    const directMatch = SERVICE_CATEGORIES.find(
+      (cat) =>
+        lower.includes(String(cat.id).toLowerCase()) ||
+        lower.includes(cat.name.toLowerCase())
+    );
+    return directMatch ? directMatch.id : null;
   };
 
-  // Main NLU Intent & Context Resolution Engine
   const generateBotReply = (rawInput: string): { text: string; actions?: ChatAction[] } => {
     const q = rawInput.trim().toLowerCase();
     const t = UI_STRINGS[language];
@@ -313,7 +348,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         q
       );
     const isAllServicesIntent =
-      /(what services|all services|which services|available services|list of services|kya kya|ki ki|क्या सेवाएं|कौन सी सर्विस| কী কী পরিষেবা|কি কি সার্ভিস)/i.test(
+      /(what services|all services|which services|available services|list of services|kya kya|ki ki|क्या सेवाएं|कौन सी सर्विस|কী কী পরিষেবা|কি কি সার্ভিস)/i.test(
         q
       );
     const isBookingHelpIntent =
@@ -321,7 +356,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         q
       );
 
-    // 1. Check Tracking Intent using real localStorage bookings
     if (isTrackingIntent) {
       const bookings = readLiveBookings();
       const upcoming = bookings.filter((b) => b.tabStatus === 'Upcoming');
@@ -363,7 +397,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       }
     }
 
-    // 2. Reschedule Intent
     if (isRescheduleIntent) {
       const bookings = readLiveBookings().filter((b) => b.tabStatus === 'Upcoming');
       const refList = bookings.map((b) => b.reference).join(', ');
@@ -394,7 +427,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 3. Cancel Intent
     if (isCancelIntent) {
       if (language === 'hi') {
         return {
@@ -414,7 +446,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 4. Price / Cost Inquiry (Context-Aware!)
     if (isPriceIntent) {
       if (activeCatId) {
         const cat = SERVICE_CATEGORIES.find((c) => c.id === activeCatId);
@@ -458,10 +489,9 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         }
       }
 
-      // General pricing overview across all categories
-      const summary = SERVICE_CATEGORIES.map((c) => `${c.name}: Starting at ₹${c.startingPrice}`).join(
-        ' • '
-      );
+      const summary = SERVICE_CATEGORIES.map(
+        (c) => `${c.name}: Starting at ₹${c.startingPrice}`
+      ).join(' • ');
       if (language === 'hi') {
         return {
           text: `सेवासेतु पर हमारी शुरुआती कीमतें (Starting prices) इस प्रकार हैं: ${summary}। आप किस सेवा की कीमत जानना चाहते हैं?`,
@@ -480,7 +510,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 5. Specific Service Category Matched (e.g., Fan repair -> Electrician, Puja -> Priest)
     if (matchedCatId) {
       const cat = SERVICE_CATEGORIES.find((c) => c.id === matchedCatId)!;
       const pros = INITIAL_PROFESSIONALS.filter((p) => p.categoryId === matchedCatId);
@@ -488,7 +517,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
 
       if (language === 'hi') {
         return {
-          text: `जी हाँ! ${cat.name} (${cat.hindiSub}) के लिए हमारे पास ₹${cat.startingPrice} से शुरू होने वाली सेवाएं हैं। उपलब्ध प्रोफेशनल्स: ${proNames}। आप अभी प्रोफाइल देखकर स्लॉट बुक कर सकते हैं (अगर कल या बाद में कीमत पूछनी हो तो बस "कितना चार्ज है?" लिखें)।`,
+          text: `जी हाँ! ${cat.name} (${cat.hindiSub}) के लिए हमारे पास ₹${cat.startingPrice} से शुरू होने वाली सेवाएं हैं। उपलब्ध प्रोफेशनल्स: ${proNames}। आप अभी प्रोफाइल देखकर स्लॉट बुक कर सकते हैं।`,
           actions: [
             {
               label: t.exploreBtn(cat.name),
@@ -522,7 +551,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 6. Feedback / Rating Intent
     if (isFeedbackIntent) {
       if (language === 'hi') {
         return {
@@ -542,7 +570,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 7. Payment / Promo Codes Intent
     if (isPaymentIntent) {
       const codes = PROMO_OFFERS.map((o) => `${o.code} (${o.title})`).join(', ');
       if (language === 'hi') {
@@ -563,7 +590,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 8. List All Services / General Booking Help / Greeting
     if (isAllServicesIntent || isBookingHelpIntent || isGreeting) {
       const catNames = SERVICE_CATEGORIES.map((c) => c.name).join(', ');
       if (language === 'hi') {
@@ -593,7 +619,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
       };
     }
 
-    // 9. Out-of-scope Polite Fallback in the Selected Language
     return {
       text: t.fallback,
       actions: [
@@ -647,7 +672,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
           aria-label="SevaSetu Assistant Chat Window"
           className="flex h-[540px] w-[360px] sm:w-[410px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
         >
-          {/* Chatbot Header with Language Selector */}
           <div className="bg-slate-900 px-4 py-3.5 text-white">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -661,7 +685,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* Accessible Language Selector */}
                 <div className="flex items-center gap-1 rounded-xl bg-slate-800 px-2 py-1 border border-slate-700">
                   <Globe className="h-3.5 w-3.5 text-orange-400" />
                   <select
@@ -713,7 +736,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
             </div>
           </div>
 
-          {/* Messages List */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50">
             {messages.map((msg) => (
               <div
@@ -732,7 +754,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
                   {msg.text}
                 </div>
 
-                {/* Action Buttons */}
                 {msg.actions && msg.actions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {msg.actions.map((act, idx) => (
@@ -759,7 +780,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick-Reply Suggested Prompts */}
           <div className="border-t border-slate-200 bg-white px-3.5 py-2">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
               {t.suggestionsLabel}
@@ -778,7 +798,6 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
             </div>
           </div>
 
-          {/* Input Form */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
