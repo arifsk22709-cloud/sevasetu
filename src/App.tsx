@@ -24,7 +24,6 @@ import {
   Award,
   RotateCcw,
   Navigation,
-  Phone,
   IndianRupee,
   Filter,
   MessageSquarePlus,
@@ -32,6 +31,14 @@ import {
   Check,
   AlertTriangle,
   Info,
+  Sun,
+  Moon,
+  LogIn,
+  LogOut,
+  User,
+  Mail,
+  Lock,
+  Smartphone,
 } from 'lucide-react';
 import {
   ServiceCategoryId,
@@ -57,10 +64,20 @@ import { ChatbotWidget } from './components/ChatbotWidget';
 
 type ActivePage = 'home' | 'services' | 'bookings' | 'tracking' | 'rewards';
 
+interface UserAccount {
+  name: string;
+  email: string;
+  phone: string;
+  provider: 'email' | 'google';
+  avatarUrl?: string;
+}
+
 const STORAGE_KEYS = {
   BOOKINGS: 'sevasetu_bookings_v1',
   FAVOURITES: 'sevasetu_favourites_v1',
   USER_REVIEWS: 'sevasetu_user_reviews_v1',
+  THEME: 'sevasetu_theme_v1',
+  USER: 'sevasetu_auth_user_v1',
 };
 
 function getTodayDateString(): string {
@@ -76,6 +93,50 @@ export default function App() {
   const [activePage, setActivePage] = useState<ActivePage>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Theme State (Light / Dark)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.THEME);
+      return saved === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    const rootEl = document.documentElement;
+    if (theme === 'dark') {
+      rootEl.classList.add('dark');
+    } else {
+      rootEl.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem(STORAGE_KEYS.THEME, theme);
+    } catch {
+      // Ignore storage error
+    }
+  }, [theme]);
+
+  // Authenticated User State
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.USER);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Auth Modal State
+  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authName, setAuthName] = useState<string>('');
+  const [authEmail, setAuthEmail] = useState<string>('');
+  const [authPhone, setAuthPhone] = useState<string>('9876543210');
+  const [authPassword, setAuthPassword] = useState<string>('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [googleChooserOpen, setGoogleChooserOpen] = useState<boolean>(false);
 
   // Persistent Bookings State
   const [bookings, setBookings] = useState<Booking[]>(() => {
@@ -97,7 +158,7 @@ export default function App() {
     }
   });
 
-  // Persistent User-Submitted Reviews Map (professionalId -> ReviewItem[])
+  // Persistent User-Submitted Reviews Map
   const [userReviewsByPro, setUserReviewsByPro] = useState<Record<string, ReviewItem[]>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.USER_REVIEWS);
@@ -111,7 +172,7 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_KEYS.BOOKINGS, JSON.stringify(bookings));
     } catch {
-      // Ignore storage quota errors in restricted environments
+      // Ignore quota errors
     }
   }, [bookings]);
 
@@ -119,7 +180,7 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_KEYS.FAVOURITES, JSON.stringify(favourites));
     } catch {
-      // Ignore storage quota errors
+      // Ignore quota errors
     }
   }, [favourites]);
 
@@ -127,9 +188,21 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_KEYS.USER_REVIEWS, JSON.stringify(userReviewsByPro));
     } catch {
-      // Ignore storage quota errors
+      // Ignore quota errors
     }
   }, [userReviewsByPro]);
+
+  useEffect(() => {
+    try {
+      if (currentUser) {
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.USER);
+      }
+    } catch {
+      // Ignore quota errors
+    }
+  }, [currentUser]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -199,6 +272,75 @@ export default function App() {
     'Professional behaviour',
     'On time',
   ]);
+
+  // Handle Email Sign In / Sign Up
+  const handleEmailAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    const trimmedEmail = authEmail.trim();
+    if (!trimmedEmail.includes('@') || trimmedEmail.length < 5) {
+      setAuthError('Please enter a valid email address.');
+      return;
+    }
+    if (authPassword.length < 4) {
+      setAuthError('Password must be at least 4 characters.');
+      return;
+    }
+    if (authMode === 'signup' && authName.trim().length < 2) {
+      setAuthError('Please enter your full name to create an account.');
+      return;
+    }
+
+    const displayName =
+      authMode === 'signup'
+        ? authName.trim()
+        : trimmedEmail
+            .split('@')[0]
+            .replace(/[._-]/g, ' ')
+            .replace(/\b\w/g, (l) => l.toUpperCase());
+
+    const cleanPhone = authPhone.replace(/\D/g, '').slice(0, 10) || '9876543210';
+
+    const userObj: UserAccount = {
+      name: displayName,
+      email: trimmedEmail,
+      phone: cleanPhone,
+      provider: 'email',
+    };
+
+    setCurrentUser(userObj);
+    setCustomerName(userObj.name);
+    setCustomerPhone(userObj.phone);
+    setAuthModalOpen(false);
+    setGoogleChooserOpen(false);
+    showToast(
+      authMode === 'signup'
+        ? `Account created! Welcome to SevaSetu, ${userObj.name}.`
+        : `Welcome back, ${userObj.name}!`
+    );
+  };
+
+  // Handle Google OAuth Simulation
+  const handleGoogleLogin = (presetName: string, presetEmail: string) => {
+    const userObj: UserAccount = {
+      name: presetName,
+      email: presetEmail,
+      phone: '9876543210',
+      provider: 'google',
+    };
+    setCurrentUser(userObj);
+    setCustomerName(userObj.name);
+    setCustomerPhone(userObj.phone);
+    setAuthModalOpen(false);
+    setGoogleChooserOpen(false);
+    showToast(`Signed in with Google as ${userObj.name} (${userObj.email})`);
+  };
+
+  const handleSignOut = () => {
+    setCurrentUser(null);
+    showToast('You have been signed out safely.');
+  };
 
   // Enrich Professionals with Dynamic Ratings & Reviews
   const professionalsWithDynamicStats = useMemo(() => {
@@ -272,10 +414,10 @@ export default function App() {
     [bookings]
   );
 
-  // Loyalty Streak Calculation (Consistent with actual completed bookings)
+  // Loyalty Streak Calculation
   const completedCount = completedBookings.length;
   const loyaltyTarget = 3;
-  const isLoyaltyUnlocked = completedCount >= 1; // At least 1 completed booking gives 5% or 3+ gives 10%
+  const isLoyaltyUnlocked = completedCount >= 1;
   const loyaltyMilestoneProgress = Math.min(completedCount, loyaltyTarget);
 
   // Toggle Favourite
@@ -291,6 +433,10 @@ export default function App() {
   // Open Booking Modal
   const openBookingModal = (pro: Professional) => {
     setBookingModalPro(pro);
+    if (currentUser) {
+      setCustomerName(currentUser.name);
+      setCustomerPhone(currentUser.phone);
+    }
     setBookingDate(getTodayDateString());
     setBookingSlot(TIME_SLOTS[0]);
     setServiceNotes('');
@@ -424,7 +570,6 @@ export default function App() {
       errors.bookingDate = 'Please select today or a future date for your booking.';
     }
 
-    // Check duplicate active booking for same professional + date + slot
     const duplicate = bookings.find(
       (b) =>
         b.tabStatus === 'Upcoming' &&
@@ -547,7 +692,7 @@ export default function App() {
     setBookingTab('Cancelled');
   };
 
-  // Update Tracking Stage & Automatically Move to Completed if Stage == 'Service complete'
+  // Update Tracking Stage
   const handleUpdateTracking = (
     bookingId: string,
     newStage: TrackingStage,
@@ -572,7 +717,7 @@ export default function App() {
     }
   };
 
-  // Reset Tracking Simulation for Demo Re-Runs
+  // Reset Tracking Simulation
   const handleResetTracking = (bookingId: string) => {
     setBookings((prev) =>
       prev.map((b) => {
@@ -588,7 +733,7 @@ export default function App() {
     showToast('Live tracking simulation reset to Stage 1 (Booking placed).');
   };
 
-  // Submit or Update Customer Feedback for Completed Booking
+  // Submit Customer Feedback
   const handleSubmitFeedback = (e: React.FormEvent) => {
     e.preventDefault();
     if (!feedbackModalBooking) return;
@@ -602,12 +747,10 @@ export default function App() {
       submittedAt: new Date().toISOString().slice(0, 10),
     };
 
-    // 1. Save feedback on the booking
     setBookings((prev) =>
       prev.map((b) => (b.id === feedbackModalBooking.id ? { ...b, feedback: feedbackObj } : b))
     );
 
-    // 2. Link feedback to the professional's review list (replace if editing existing booking review)
     const proId = feedbackModalBooking.professionalId;
     const newReviewItem: ReviewItem = {
       id: `user-rev-${feedbackModalBooking.id}`,
@@ -635,7 +778,7 @@ export default function App() {
     setFeedbackModalBooking(null);
   };
 
-  // Reset All Demo Data to Initial State
+  // Reset All Demo Data
   const handleResetAllDemoData = () => {
     localStorage.removeItem(STORAGE_KEYS.BOOKINGS);
     localStorage.removeItem(STORAGE_KEYS.FAVOURITES);
@@ -673,23 +816,21 @@ export default function App() {
     }
   };
 
-  // Active booking for Live Tracking page
   const activeTrackedBooking = useMemo(() => {
     const found = bookings.find((b) => b.id === selectedTrackingBookingId);
     if (found && found.tabStatus !== 'Cancelled') return found;
     return upcomingBookings[0] || completedBookings[0] || null;
   }, [bookings, selectedTrackingBookingId, upcomingBookings, completedBookings]);
 
-  // Active Professional for Profile Modal
   const profileModalProfessional = useMemo(
     () => professionalsWithDynamicStats.find((p) => p.id === profileModalProId) || null,
     [professionalsWithDynamicStats, profileModalProId]
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 transition-colors duration-200">
       {/* Top Demo Transparency Strip */}
-      <div className="bg-slate-900 text-slate-200 px-4 py-1.5 text-xs">
+      <div className="bg-slate-900 text-slate-200 px-4 py-1.5 text-xs border-b border-slate-800">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="rounded bg-orange-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-300 border border-orange-400/30">
@@ -699,14 +840,16 @@ export default function App() {
               Sample profiles, simulated route GPS, and demo payment options. No real credentials collected.
             </span>
           </div>
-          <button
-            type="button"
-            onClick={handleResetAllDemoData}
-            className="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-0.5 text-[11px] font-semibold text-orange-300 hover:bg-slate-700 cursor-pointer"
-          >
-            <RotateCcw className="h-3 w-3" />
-            Reset Demo Data
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetAllDemoData}
+              className="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-0.5 text-[11px] font-semibold text-orange-300 hover:bg-slate-700 cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset Demo Data
+            </button>
+          </div>
         </div>
       </div>
 
@@ -733,7 +876,7 @@ export default function App() {
           </button>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1.5" aria-label="Main Navigation">
+          <nav className="hidden lg:flex items-center gap-1" aria-label="Main Navigation">
             {(
               [
                 { id: 'home', label: 'Home' },
@@ -751,9 +894,9 @@ export default function App() {
                 key={item.id}
                 type="button"
                 onClick={() => setActivePage(item.id)}
-                className={`relative rounded-xl px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
+                className={`relative rounded-xl px-3 py-2 text-xs font-semibold transition cursor-pointer ${
                   activePage === item.id
-                    ? 'bg-orange-50 text-orange-600'
+                    ? 'bg-orange-500/15 text-orange-600'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
@@ -767,8 +910,28 @@ export default function App() {
             ))}
           </nav>
 
-          {/* Right Quick Actions */}
-          <div className="hidden md:flex items-center gap-2.5">
+          {/* Right Quick Actions: Theme Toggle + Favourites + Auth + Book CTA */}
+          <div className="hidden md:flex items-center gap-2">
+            {/* Light / Dark Theme Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = theme === 'light' ? 'dark' : 'light';
+                setTheme(next);
+                showToast(`Switched to ${next === 'dark' ? 'Dark' : 'Light'} Mode`);
+              }}
+              aria-label="Toggle Light or Dark Theme"
+              title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 cursor-pointer"
+            >
+              {theme === 'light' ? (
+                <Moon className="h-4 w-4 text-slate-700" />
+              ) : (
+                <Sun className="h-4 w-4 text-amber-400" />
+              )}
+            </button>
+
+            {/* Favourites */}
             <button
               type="button"
               onClick={() => {
@@ -778,8 +941,47 @@ export default function App() {
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
               <Heart className="h-3.5 w-3.5 fill-rose-500 text-rose-500" />
-              <span>Favourites ({favourites.length})</span>
+              <span>({favourites.length})</span>
             </button>
+
+            {/* User Auth Button / Profile Pill */}
+            {currentUser ? (
+              <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-r from-orange-500 to-rose-500 text-[11px] font-bold text-white">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="text-left">
+                  <p className="text-[11px] font-bold text-slate-900 leading-none">
+                    {currentUser.name.split(' ')[0]}
+                  </p>
+                  <p className="text-[9px] text-slate-500 leading-none mt-0.5">
+                    {currentUser.provider === 'google' ? 'Google Linked' : 'Member'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  title="Sign Out"
+                  className="ml-1 rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signin');
+                  setAuthError(null);
+                  setAuthModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50 cursor-pointer"
+              >
+                <LogIn className="h-3.5 w-3.5 text-orange-600" />
+                <span>Sign In</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -788,19 +990,33 @@ export default function App() {
               }}
               className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95 cursor-pointer"
             >
-              Book a Service
+              Book Service
             </button>
           </div>
 
-          {/* Mobile Hamburger Button */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen((prev) => !prev)}
-            aria-label="Toggle Menu"
-            className="md:hidden rounded-xl border border-slate-200 p-2 text-slate-700 hover:bg-slate-100"
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+          {/* Mobile Controls (Theme + Hamburger) */}
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              aria-label="Toggle Theme"
+              className="rounded-xl border border-slate-200 p-2 text-slate-700"
+            >
+              {theme === 'light' ? (
+                <Moon className="h-4 w-4" />
+              ) : (
+                <Sun className="h-4 w-4 text-amber-400" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label="Toggle Menu"
+              className="rounded-xl border border-slate-200 p-2 text-slate-700 hover:bg-slate-100"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Drawer */}
@@ -824,13 +1040,42 @@ export default function App() {
                 }}
                 className={`block w-full rounded-xl px-3.5 py-2.5 text-left text-xs font-semibold ${
                   activePage === item.id
-                    ? 'bg-orange-50 text-orange-600'
+                    ? 'bg-orange-500/15 text-orange-600'
                     : 'text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 {item.label}
               </button>
             ))}
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+              {currentUser ? (
+                <div className="flex flex-1 items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-xs">
+                  <span className="font-bold text-slate-900">
+                    Signed in: {currentUser.name} ({currentUser.email})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="font-bold text-rose-600"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setAuthMode('signin');
+                    setAuthModalOpen(true);
+                  }}
+                  className="w-full rounded-xl bg-slate-900 py-2.5 text-center text-xs font-bold text-white"
+                >
+                  Sign In / Sign Up / Link Google
+                </button>
+              )}
+            </div>
           </div>
         )}
       </header>
@@ -840,7 +1085,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-20 right-5 z-50 flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-xl"
+          className="fixed top-20 right-5 z-50 flex items-center gap-2.5 rounded-2xl border border-emerald-500/30 bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-xl"
         >
           <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
@@ -860,11 +1105,17 @@ export default function App() {
         {activePage === 'home' && (
           <div>
             {/* Hero Section */}
-            <section className="relative overflow-hidden bg-gradient-to-b from-white via-orange-50/40 to-slate-50 pt-8 pb-14 lg:py-16">
+            <section
+              className={`relative overflow-hidden pt-8 pb-14 lg:py-16 ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900'
+                  : 'bg-gradient-to-b from-white via-orange-50/40 to-slate-50'
+              }`}
+            >
               <div className="mx-auto max-w-7xl px-4 sm:px-6">
                 <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
                   <div className="lg:col-span-7 space-y-6">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3.5 py-1.5 text-xs font-semibold text-orange-700">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/10 px-3.5 py-1.5 text-xs font-semibold text-orange-600">
                       <Sparkles className="h-3.5 w-3.5" />
                       <span>India’s AI-Powered Home, Personal & Spiritual Services Platform</span>
                     </div>
@@ -908,7 +1159,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setActivePage('tracking')}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3.5 text-xs font-bold text-teal-800 hover:bg-teal-100 cursor-pointer"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3.5 text-xs font-bold text-teal-600 hover:bg-teal-500/20 cursor-pointer"
                       >
                         <Navigation className="h-4 w-4 text-teal-600" />
                         <span>Live Tracking Demo</span>
@@ -922,27 +1173,21 @@ export default function App() {
                           <ShieldCheck className="h-4 w-4 text-emerald-600" />
                           <span>Demo Verified</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Curated sample specialists
-                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">Curated sample specialists</p>
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
                           <IndianRupee className="h-4 w-4 text-orange-600" />
                           <span>Upfront Pricing</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Zero hidden visit charges
-                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">Zero hidden visit charges</p>
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
                           <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                           <span>4.8★ Avg Rating</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Live interactive reviews
-                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">Live interactive reviews</p>
                       </div>
                     </div>
                   </div>
@@ -1040,7 +1285,7 @@ export default function App() {
                         </span>
                         <span>{cat.name}</span>
                       </div>
-                      <div className="absolute bottom-3 right-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-extrabold text-slate-900 shadow">
+                      <div className="absolute bottom-3 right-3 rounded-lg bg-slate-900/90 px-2.5 py-1 text-xs font-extrabold text-white shadow">
                         From ₹{cat.startingPrice}
                       </div>
                     </div>
@@ -1106,7 +1351,7 @@ export default function App() {
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-bold text-orange-800">
+                                <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-[10px] font-bold text-orange-600">
                                   {pro.categoryName}
                                 </span>
                                 <button
@@ -1130,7 +1375,7 @@ export default function App() {
                               </h3>
 
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                                <span className="inline-flex items-center gap-1 font-bold text-amber-600">
+                                <span className="inline-flex items-center gap-1 font-bold text-amber-500">
                                   <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                                   {pro.computedRating} ({pro.computedReviewCount})
                                 </span>
@@ -1149,7 +1394,7 @@ export default function App() {
                               <MapPin className="h-3.5 w-3.5 text-slate-400" />
                               {pro.location}
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
                               <ShieldCheck className="h-3 w-3" />
                               Demo Verified
                             </span>
@@ -1190,7 +1435,7 @@ export default function App() {
               </div>
             </section>
 
-            {/* Dark Navy Premium Promotional Section — "The SevaSetu Difference" */}
+            {/* Dark Navy Premium Promotional Section */}
             <section className="bg-slate-900 py-16 text-white">
               <div className="mx-auto max-w-7xl px-4 sm:px-6">
                 <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 items-center">
@@ -1277,13 +1522,6 @@ export default function App() {
                             className="h-full rounded-full bg-gradient-to-r from-orange-500 to-teal-400 transition-all duration-500"
                           />
                         </div>
-                        <p className="mt-2 text-[11px] text-slate-400">
-                          {completedCount >= loyaltyTarget
-                            ? 'Milestone achieved! Extra Loyalty Discount unlocked at checkout.'
-                            : `Complete ${
-                                loyaltyTarget - loyaltyMilestoneProgress
-                              } more booking(s) to reach the 3-booking Gold Milestone!`}
-                        </p>
                       </div>
 
                       <div className="mt-4 space-y-2">
@@ -1357,7 +1595,7 @@ export default function App() {
                 onClick={() => setSelectedCategory('all')}
                 className={`shrink-0 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer ${
                   selectedCategory === 'all'
-                    ? 'bg-slate-900 text-white shadow-xs'
+                    ? 'bg-orange-600 text-white shadow-xs'
                     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                 }`}
               >
@@ -1383,7 +1621,6 @@ export default function App() {
             {/* Search, Filter & Sort Controls Card */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                {/* Search Input */}
                 <div className="sm:col-span-2 relative">
                   <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
@@ -1392,11 +1629,10 @@ export default function App() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search name, service, puja, plumber, Noida..."
                     aria-label="Search professionals"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-xs text-slate-900 focus:border-orange-500 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
                   />
                 </div>
 
-                {/* City Filter */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                     Location Zone
@@ -1415,7 +1651,6 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* Rating Filter */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                     Min Rating
@@ -1432,7 +1667,6 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* Max Price Filter */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                     Max Price (₹)
@@ -1450,7 +1684,6 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* Sort By */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                     Sort By
@@ -1486,13 +1719,15 @@ export default function App() {
                       : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <Heart className={`h-3.5 w-3.5 ${onlyFavourites ? 'fill-white' : 'text-rose-500'}`} />
+                  <Heart
+                    className={`h-3.5 w-3.5 ${onlyFavourites ? 'fill-white' : 'text-rose-500'}`}
+                  />
                   <span>{onlyFavourites ? 'Showing Saved Favourites' : 'Filter Favourites Only'}</span>
                 </button>
               </div>
             </div>
 
-            {/* Results Grid or Empty State */}
+            {/* Results Grid */}
             {filteredProfessionals.length === 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-xs">
                 <Filter className="mx-auto h-10 w-10 text-slate-400" />
@@ -1502,20 +1737,6 @@ export default function App() {
                 <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto">
                   Try clearing your search query, expanding your price filter, or switching back to All Categories.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedCategory('all');
-                    setSearchQuery('');
-                    setCityFilter('All');
-                    setMinRatingFilter(0);
-                    setMaxPriceFilter(5000);
-                    setOnlyFavourites(false);
-                  }}
-                  className="mt-4 rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-orange-500 cursor-pointer"
-                >
-                  Reset Filters & Show All
-                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -1536,7 +1757,7 @@ export default function App() {
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">
-                              <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold text-orange-700 border border-orange-200">
+                              <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-[10px] font-bold text-orange-600">
                                 {pro.categoryName}
                               </span>
                               <button
@@ -1558,7 +1779,7 @@ export default function App() {
                               {pro.name}
                             </h3>
                             <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
-                              <span className="inline-flex items-center gap-1 font-bold text-amber-600">
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-500">
                                 <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                                 {pro.computedRating} ({pro.computedReviewCount} reviews)
                               </span>
@@ -1588,7 +1809,7 @@ export default function App() {
                             <MapPin className="h-3.5 w-3.5 text-slate-400" />
                             {pro.location}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
                             <ShieldCheck className="h-3 w-3" />
                             Demo Sample Verified
                           </span>
@@ -1650,13 +1871,12 @@ export default function App() {
               </button>
             </div>
 
-            {/* 3 Working Status Tabs: Upcoming | Completed | Cancelled */}
             <div className="flex border-b border-slate-200 gap-2">
               {(
                 [
-                  { id: 'Upcoming', count: upcomingBookings.length, color: 'text-orange-600' },
-                  { id: 'Completed', count: completedBookings.length, color: 'text-emerald-600' },
-                  { id: 'Cancelled', count: cancelledBookings.length, color: 'text-rose-600' },
+                  { id: 'Upcoming', count: upcomingBookings.length },
+                  { id: 'Completed', count: completedBookings.length },
+                  { id: 'Cancelled', count: cancelledBookings.length },
                 ] as const
               ).map((tab) => (
                 <button
@@ -1665,7 +1885,7 @@ export default function App() {
                   onClick={() => setBookingTab(tab.id)}
                   className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition cursor-pointer ${
                     bookingTab === tab.id
-                      ? 'border-orange-600 text-orange-600 bg-orange-50/50 rounded-t-xl'
+                      ? 'border-orange-600 text-orange-600 bg-orange-500/10 rounded-t-xl'
                       : 'border-transparent text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -1677,227 +1897,135 @@ export default function App() {
               ))}
             </div>
 
-            {/* Tab Content List */}
             <div className="space-y-4">
               {(bookingTab === 'Upcoming'
                 ? upcomingBookings
                 : bookingTab === 'Completed'
                 ? completedBookings
                 : cancelledBookings
-              ).length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-                  <Calendar className="mx-auto h-9 w-9 text-slate-400" />
-                  <h3 className="mt-2 text-base font-bold text-slate-900">
-                    No {bookingTab.toLowerCase()} bookings yet
-                  </h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Explore our 8 service categories to schedule a doorstep professional.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActivePage('services')}
-                    className="mt-4 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white cursor-pointer"
-                  >
-                    Browse Services
-                  </button>
-                </div>
-              ) : (
-                (bookingTab === 'Upcoming'
-                  ? upcomingBookings
-                  : bookingTab === 'Completed'
-                  ? completedBookings
-                  : cancelledBookings
-                ).map((bk) => (
-                  <div
-                    key={bk.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition hover:border-slate-300"
-                  >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      {/* Left Info */}
-                      <div className="flex items-start gap-4">
-                        <SafeImage
-                          src={bk.professionalPhoto}
-                          alt={bk.professionalName}
-                          fallbackLabel={bk.categoryName}
-                          className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
-                        />
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-slate-500">
-                              Ref: {bk.reference}
+              ).map((bk) => (
+                <div
+                  key={bk.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4">
+                      <SafeImage
+                        src={bk.professionalPhoto}
+                        alt={bk.professionalName}
+                        fallbackLabel={bk.categoryName}
+                        className="h-20 w-20 rounded-2xl shrink-0 border border-slate-200"
+                      />
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-slate-500">
+                            Ref: {bk.reference}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-700">
+                            {bk.categoryName}
+                          </span>
+                          {bk.tabStatus === 'Upcoming' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/15 px-2.5 py-0.5 text-[11px] font-bold text-teal-600">
+                              <span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-ping" />
+                              {bk.trackingStage}
                             </span>
-                            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-700">
-                              {bk.categoryName}
-                            </span>
-
-                            {/* Status Pill */}
-                            {bk.tabStatus === 'Upcoming' && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-0.5 text-[11px] font-bold text-teal-700 border border-teal-200">
-                                <span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-ping" />
-                                {bk.trackingStage}
-                              </span>
-                            )}
-                            {bk.tabStatus === 'Completed' && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Completed
-                              </span>
-                            )}
-                            {bk.tabStatus === 'Cancelled' && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
-                                <XCircle className="h-3.5 w-3.5" />
-                                Cancelled
-                              </span>
-                            )}
-                          </div>
-
-                          <h3 className="text-base font-bold text-slate-900">
-                            {bk.professionalName}
-                          </h3>
-
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                            <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
-                              <Calendar className="h-3.5 w-3.5 text-orange-600" />
-                              {bk.date}
-                            </span>
-                            <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
-                              <Clock className="h-3.5 w-3.5 text-orange-600" />
-                              {bk.timeSlot}
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                              {bk.address}
-                            </span>
-                          </div>
-
-                          {bk.notes && (
-                            <p className="text-xs text-slate-500 italic">Note: "{bk.notes}"</p>
                           )}
-
-                          {bk.rescheduleHistory.length > 0 && (
-                            <p className="text-[11px] font-medium text-amber-700 bg-amber-50 inline-block px-2 py-0.5 rounded">
-                              Rescheduled from{' '}
-                              {bk.rescheduleHistory[bk.rescheduleHistory.length - 1].oldDate} (
-                              {bk.rescheduleHistory[bk.rescheduleHistory.length - 1].oldTimeSlot})
-                            </p>
+                          {bk.tabStatus === 'Completed' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-600">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Completed
+                            </span>
                           )}
-
-                          {bk.tabStatus === 'Cancelled' && bk.cancellationReason && (
-                            <p className="text-xs font-medium text-rose-700">
-                              Cancellation Reason: {bk.cancellationReason}
-                            </p>
+                          {bk.tabStatus === 'Cancelled' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2.5 py-0.5 text-[11px] font-bold text-rose-600">
+                              <XCircle className="h-3.5 w-3.5" />
+                              Cancelled
+                            </span>
                           )}
+                        </div>
 
-                          {bk.tabStatus === 'Completed' && bk.feedback && (
-                            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/70 p-2.5 text-xs">
-                              <div className="flex items-center gap-1 font-bold text-amber-800">
-                                <span>Your Submitted Rating: {bk.feedback.rating}★</span>
-                                <span>•</span>
-                                <span className="text-[11px] font-normal text-slate-600">
-                                  {bk.feedback.tags.join(', ')}
-                                </span>
-                              </div>
-                              <p className="mt-0.5 text-slate-700">"{bk.feedback.comment}"</p>
-                            </div>
-                          )}
+                        <h3 className="text-base font-bold text-slate-900">
+                          {bk.professionalName}
+                        </h3>
+
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                          <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
+                            <Calendar className="h-3.5 w-3.5 text-orange-600" />
+                            {bk.date}
+                          </span>
+                          <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
+                            <Clock className="h-3.5 w-3.5 text-orange-600" />
+                            {bk.timeSlot}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                            {bk.address}
+                          </span>
                         </div>
                       </div>
+                    </div>
 
-                      {/* Right Price & Context-Sensitive Action Buttons */}
-                      <div className="flex flex-col sm:items-end justify-between gap-3 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
-                        <div className="sm:text-right">
-                          <span className="text-lg font-extrabold text-slate-900">
-                            ₹{bk.totalPrice}
-                          </span>
-                          <span className="block text-[11px] text-slate-500">
-                            {bk.paymentMethod}
-                          </span>
-                        </div>
+                    <div className="flex flex-col sm:items-end justify-between gap-3 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
+                      <div className="sm:text-right">
+                        <span className="text-lg font-extrabold text-slate-900">
+                          ₹{bk.totalPrice}
+                        </span>
+                        <span className="block text-[11px] text-slate-500">
+                          {bk.paymentMethod}
+                        </span>
+                      </div>
 
-                        {/* Actions strictly governed by booking status */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setProfileModalProId(bk.professionalId)}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
-                          >
-                            View Provider
-                          </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setProfileModalProId(bk.professionalId)}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                        >
+                          View Provider
+                        </button>
 
-                          {bk.tabStatus === 'Upcoming' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setRescheduleModalBooking(bk);
-                                  setNewRescheduleDate(bk.date);
-                                  setNewRescheduleSlot(bk.timeSlot);
-                                  setRescheduleError(null);
-                                }}
-                                className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer"
-                              >
-                                Reschedule
-                              </button>
+                        {bk.tabStatus === 'Upcoming' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRescheduleModalBooking(bk);
+                                setNewRescheduleDate(bk.date);
+                                setNewRescheduleSlot(bk.timeSlot);
+                                setRescheduleError(null);
+                              }}
+                              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-500/20 cursor-pointer"
+                            >
+                              Reschedule
+                            </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCancelModalBooking(bk);
-                                  setCancelReason('Change of plans — will rebook later');
-                                }}
-                                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
-                              >
-                                Cancel Booking
-                              </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCancelModalBooking(bk);
+                                setCancelReason('Change of plans — will rebook later');
+                              }}
+                              className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-500/20 cursor-pointer"
+                            >
+                              Cancel Booking
+                            </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedTrackingBookingId(bk.id);
-                                  setActivePage('tracking');
-                                }}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-teal-500 cursor-pointer"
-                              >
-                                <Navigation className="h-3.5 w-3.5" />
-                                Track Live
-                              </button>
-                            </>
-                          )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTrackingBookingId(bk.id);
+                                setActivePage('tracking');
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-teal-500 cursor-pointer"
+                            >
+                              <Navigation className="h-3.5 w-3.5" />
+                              Track Live
+                            </button>
+                          </>
+                        )}
 
-                          {bk.tabStatus === 'Completed' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const pro = professionalsWithDynamicStats.find(
-                                    (p) => p.id === bk.professionalId
-                                  );
-                                  if (pro) openBookingModal(pro);
-                                }}
-                                className="rounded-xl border border-orange-300 bg-orange-50 px-3.5 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100 cursor-pointer"
-                              >
-                                Book Again
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFeedbackModalBooking(bk);
-                                  setFeedbackRating(bk.feedback?.rating ?? 5);
-                                  setFeedbackComment(bk.feedback?.comment ?? '');
-                                  setFeedbackSelectedTags(
-                                    bk.feedback?.tags ?? ['Professional behaviour', 'On time']
-                                  );
-                                }}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
-                              >
-                                <MessageSquarePlus className="h-3.5 w-3.5" />
-                                {bk.feedback ? 'Edit Feedback' : 'Leave Feedback'}
-                              </button>
-                            </>
-                          )}
-
-                          {bk.tabStatus === 'Cancelled' && (
+                        {bk.tabStatus === 'Completed' && (
+                          <>
                             <button
                               type="button"
                               onClick={() => {
@@ -1906,17 +2034,48 @@ export default function App() {
                                 );
                                 if (pro) openBookingModal(pro);
                               }}
-                              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-xs font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
+                              className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3.5 py-2 text-xs font-bold text-orange-600 cursor-pointer"
                             >
                               Book Again
                             </button>
-                          )}
-                        </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFeedbackModalBooking(bk);
+                                setFeedbackRating(bk.feedback?.rating ?? 5);
+                                setFeedbackComment(bk.feedback?.comment ?? '');
+                                setFeedbackSelectedTags(
+                                  bk.feedback?.tags ?? ['Professional behaviour', 'On time']
+                                );
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
+                            >
+                              <MessageSquarePlus className="h-3.5 w-3.5" />
+                              {bk.feedback ? 'Edit Feedback' : 'Leave Feedback'}
+                            </button>
+                          </>
+                        )}
+
+                        {bk.tabStatus === 'Cancelled' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pro = professionalsWithDynamicStats.find(
+                                (p) => p.id === bk.professionalId
+                              );
+                              if (pro) openBookingModal(pro);
+                            }}
+                            className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-xs font-bold text-white shadow-xs hover:opacity-95 cursor-pointer"
+                          >
+                            Book Again
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
-                ))
-              )}
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1934,7 +2093,6 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Switch between active bookings to track */}
               {upcomingBookings.length > 0 && (
                 <div className="flex items-center gap-2">
                   <label className="text-xs font-bold text-slate-600">Tracking Booking:</label>
@@ -1975,16 +2133,6 @@ export default function App() {
                 <h3 className="mt-3 text-base font-bold text-slate-900">
                   No active bookings to track right now
                 </h3>
-                <p className="mt-1 text-xs text-slate-500">
-                  Book a service first to test the live animated route and status simulator.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActivePage('services')}
-                  className="mt-4 rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white cursor-pointer"
-                >
-                  Book a Service Now
-                </button>
               </div>
             )}
           </div>
@@ -2000,149 +2148,295 @@ export default function App() {
               <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">
                 Rewards, Promo Codes & Demo Gift Cards
               </h1>
-              <p className="text-xs text-slate-600 mt-0.5">
-                All reward counts and discounts below are synchronized with your actual completed demo bookings.
-              </p>
             </div>
 
-            {/* Loyalty Progress Card */}
-            <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 sm:p-8 text-white shadow-xl">
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-center">
-                <div className="lg:col-span-8 space-y-3">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-amber-400/20 px-3 py-1 text-xs font-bold text-amber-300">
-                    <Award className="h-4 w-4" />
-                    <span>Consecutive Completed Bookings Tracker</span>
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-extrabold">
-                    You have completed {completedCount} {completedCount === 1 ? 'booking' : 'bookings'} on SevaSetu
-                  </h2>
-                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                    Every booking that reaches "Service complete" automatically increments your verified counter. Having at least 1 completed booking unlocks an extra 5% Loyalty Streak discount checkbox in the booking checkout form!
-                  </p>
-                </div>
-
-                <div className="lg:col-span-4 rounded-2xl bg-slate-950/80 p-5 border border-slate-700">
-                  <div className="flex items-center justify-between text-xs font-bold">
-                    <span>Gold Streak Goal</span>
-                    <span className="text-teal-400">
-                      {loyaltyMilestoneProgress} of {loyaltyTarget} Completed
-                    </span>
-                  </div>
-                  <div className="mt-2.5 h-3 w-full overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.round((loyaltyMilestoneProgress / loyaltyTarget) * 100)
-                        )}%`,
-                      }}
-                      className="h-full rounded-full bg-gradient-to-r from-orange-500 to-teal-400"
-                    />
-                  </div>
-                  <p className="mt-2.5 text-[11px] text-slate-300">
-                    Status:{' '}
-                    <strong className="text-emerald-400">
-                      {isLoyaltyUnlocked ? '5% Extra Checkout Reward Active' : 'Complete 1 booking to unlock'}
-                    </strong>
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Promo Codes Grid */}
-            <div>
-              <h2 className="text-lg font-extrabold text-slate-900 mb-4">
-                Active Demo Promo Codes (Use at Checkout)
-              </h2>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                {PROMO_OFFERS.map((offer) => (
-                  <div
-                    key={offer.code}
-                    className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="rounded-lg bg-orange-50 px-3 py-1 font-mono text-sm font-extrabold text-orange-700 border border-orange-200">
-                          {offer.code}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-400">
-                          Min Order ₹{offer.minOrder}
-                        </span>
-                      </div>
-                      <h3 className="mt-3 text-base font-bold text-slate-900">{offer.title}</h3>
-                      <p className="mt-1 text-xs text-slate-600">{offer.description}</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {PROMO_OFFERS.map((offer) => (
+                <div
+                  key={offer.code}
+                  className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="rounded-lg bg-orange-500/15 px-3 py-1 font-mono text-sm font-extrabold text-orange-600">
+                        {offer.code}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        Min Order ₹{offer.minOrder}
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard?.writeText(offer.code);
-                        setCopiedCode(offer.code);
-                        showToast(`Promo code ${offer.code} copied!`);
-                      }}
-                      className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100 cursor-pointer"
-                    >
-                      {copiedCode === offer.code ? (
-                        <>
-                          <Check className="h-3.5 w-3.5 text-emerald-600" /> Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3.5 w-3.5" /> Copy Code
-                        </>
-                      )}
-                    </button>
+                    <h3 className="mt-3 text-base font-bold text-slate-900">{offer.title}</h3>
+                    <p className="mt-1 text-xs text-slate-600">{offer.description}</p>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Demo Gift Cards */}
-            <div>
-              <h2 className="text-lg font-extrabold text-slate-900 mb-4">
-                Demo Gift Cards (Instant Balance Deduction in Booking Form)
-              </h2>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {DEMO_GIFT_CARDS.map((gc) => (
-                  <div
-                    key={gc.code}
-                    className="flex items-center justify-between rounded-2xl border border-teal-200 bg-teal-50/50 p-5"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(offer.code);
+                      setCopiedCode(offer.code);
+                      showToast(`Promo code ${offer.code} copied!`);
+                    }}
+                    className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100 cursor-pointer"
                   >
-                    <div className="flex items-center gap-3.5">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-600 text-white">
-                        <Gift className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <span className="font-mono text-sm font-extrabold text-teal-900">
-                          {gc.code}
-                        </span>
-                        <h3 className="text-sm font-bold text-slate-900">{gc.label}</h3>
-                        <p className="text-xs text-slate-600">
-                          Deducts up to ₹{gc.balanceInr} from your booking total (Illustrative Demo Voucher)
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard?.writeText(gc.code);
-                        setCopiedCode(gc.code);
-                        showToast(`Gift card ${gc.code} copied!`);
-                      }}
-                      className="rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-teal-600 cursor-pointer"
-                    >
-                      {copiedCode === gc.code ? 'Copied!' : 'Copy Voucher'}
-                    </button>
-                  </div>
-                ))}
-              </div>
+                    {copiedCode === offer.code ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-600" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" /> Copy Code
+                      </>
+                    )}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </main>
 
-      {/* ==================== MODALS ==================== */}
+      {/* ==================== AUTHENTICATION MODAL (SIGN IN / SIGN UP / GOOGLE) ==================== */}
+      {authModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sign In or Create Account"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs overflow-y-auto"
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            {/* Top Banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-6 py-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 text-white">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold">
+                    {authMode === 'signin' ? 'Sign In to SevaSetu' : 'Create Your SevaSetu Account'}
+                  </h2>
+                  <p className="text-[11px] text-slate-300">
+                    Sync bookings, loyalty rewards & doorstep addresses
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthModalOpen(false);
+                  setGoogleChooserOpen(false);
+                }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-      {/* 1. PROFESSIONAL PROFILE MODAL */}
+            <div className="p-6 space-y-4">
+              {/* Mode Switch Tabs */}
+              <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('signin');
+                    setAuthError(null);
+                  }}
+                  className={`rounded-lg py-2 text-xs font-bold transition cursor-pointer ${
+                    authMode === 'signin'
+                      ? 'bg-white text-orange-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Sign In (Log In)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('signup');
+                    setAuthError(null);
+                  }}
+                  className={`rounded-lg py-2 text-xs font-bold transition cursor-pointer ${
+                    authMode === 'signup'
+                      ? 'bg-white text-orange-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Sign Up (New User)
+                </button>
+              </div>
+
+              {/* Continue with Google Button */}
+              {!googleChooserOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setGoogleChooserOpen(true)}
+                  className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-800 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"
+                    />
+                  </svg>
+                  <span>Continue with Google</span>
+                </button>
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">
+                      Choose a Google Account to link with SevaSetu:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setGoogleChooserOpen(false)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleGoogleLogin('Arif Sk', 'arifsk22709@gmail.com')}
+                    className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 text-left hover:border-orange-400 cursor-pointer"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-600 text-xs font-bold text-white">
+                      A
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900">Arif Sk</p>
+                      <p className="text-[11px] text-slate-500 truncate">arifsk22709@gmail.com</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGoogleLogin('Aarav Sharma', 'aarav.sharma.demo@gmail.com')}
+                    className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 text-left hover:border-orange-400 cursor-pointer"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">
+                      S
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900">
+                        Aarav Sharma (Demo Account)
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        aarav.sharma.demo@gmail.com
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              )}
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-slate-200" />
+                <span className="shrink-0 mx-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Or continue with email
+                </span>
+                <div className="flex-grow border-t border-slate-200" />
+              </div>
+
+              {authError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-700">
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleEmailAuthSubmit} className="space-y-3">
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Full Name *
+                    </label>
+                    <div className="relative">
+                      <User className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={authName}
+                        onChange={(e) => setAuthName(e.target.value)}
+                        placeholder="Arif Sk"
+                        required
+                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs text-slate-900"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Email Address *
+                  </label>
+                  <div className="relative">
+                    <Mail className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="arifsk22709@gmail.com"
+                      required
+                      className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      10-Digit Mobile Number
+                    </label>
+                    <div className="relative">
+                      <Smartphone className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="tel"
+                        maxLength={10}
+                        value={authPhone}
+                        onChange={(e) => setAuthPhone(e.target.value.replace(/\D/g, ''))}
+                        placeholder="9876543210"
+                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs text-slate-900"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Password *
+                  </label>
+                  <div className="relative">
+                    <Lock className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 py-2.5 text-xs font-bold text-white shadow-md hover:opacity-95 cursor-pointer"
+                >
+                  {authMode === 'signin' ? 'Sign In to Account' : 'Create Account & Sign In'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== EXISTING MODALS (PROFILE, BOOKING, RESCHEDULE, CANCEL, FEEDBACK) ==================== */}
       {profileModalProfessional && (
         <div
           role="dialog"
@@ -2166,19 +2460,12 @@ export default function App() {
               >
                 <X className="h-5 w-5" />
               </button>
-              <div className="absolute bottom-4 left-4 rounded-xl bg-slate-900/85 backdrop-blur-xs px-3 py-1 text-xs font-bold text-white">
-                {profileModalProfessional.categoryName} • {profileModalProfessional.location}
-              </div>
             </div>
 
             <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 border border-emerald-200">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    Illustrative Sample Profile (Demo Verified)
-                  </span>
-                  <h2 className="mt-1 text-2xl font-extrabold text-slate-900">
+                  <h2 className="text-2xl font-extrabold text-slate-900">
                     {profileModalProfessional.name}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -2202,61 +2489,6 @@ export default function App() {
                 {profileModalProfessional.bio}
               </p>
 
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                  Specialties & Services Included
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {profileModalProfessional.specialties.map((s) => (
-                    <span
-                      key={s}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-800"
-                    >
-                      ✓ {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Customer Reviews Section */}
-              <div className="border-t border-slate-200 pt-4">
-                <h3 className="text-sm font-bold text-slate-900 mb-3">
-                  Customer Reviews ({profileModalProfessional.allReviews.length})
-                </h3>
-                {profileModalProfessional.allReviews.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">
-                    No written reviews yet for this sample profile. Complete a booking to add the first review!
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {profileModalProfessional.allReviews.map((rev) => (
-                      <div
-                        key={rev.id}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900">{rev.customerName}</span>
-                          <span className="font-bold text-amber-600">{rev.rating} ★</span>
-                        </div>
-                        <p className="mt-1 text-slate-700">"{rev.comment}"</p>
-                        {rev.tags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {rev.tags.map((t) => (
-                              <span
-                                key={t}
-                                className="rounded bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 border border-slate-200"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
                 <button
                   type="button"
@@ -2274,7 +2506,7 @@ export default function App() {
                   }}
                   className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow hover:opacity-95 cursor-pointer"
                 >
-                  Book {profileModalProfessional.name.split(' ')[0]} Now
+                  Book Now
                 </button>
               </div>
             </div>
@@ -2282,7 +2514,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. BOOKING FORM MODAL */}
       {bookingModalPro && (
         <div
           role="dialog"
@@ -2296,9 +2527,7 @@ export default function App() {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-orange-400">
                   Instant Doorstep Booking
                 </span>
-                <h2 className="text-lg font-extrabold">
-                  Book {bookingModalPro.name}
-                </h2>
+                <h2 className="text-lg font-extrabold">Book {bookingModalPro.name}</h2>
               </div>
               <button
                 type="button"
@@ -2321,43 +2550,17 @@ export default function App() {
                 </div>
               )}
 
-              {/* Selected Service Summary */}
-              <div className="flex items-center gap-3.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
-                <SafeImage
-                  src={bookingModalPro.imageUrl}
-                  alt={bookingModalPro.name}
-                  fallbackLabel={bookingModalPro.categoryName}
-                  className="h-14 w-14 rounded-xl shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-[11px] font-bold text-orange-600">
-                    {bookingModalPro.categoryName}
-                  </span>
-                  <h3 className="text-sm font-bold text-slate-900 truncate">
-                    {bookingModalPro.name}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Base Visit Charge: ₹{bookingModalPro.priceInr} • {bookingModalPro.location}
-                  </p>
-                </div>
-              </div>
-
-              {/* Customer Name & Indian 10-Digit Mobile */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label
-                    htmlFor="cust-name"
-                    className="block text-xs font-bold text-slate-700 mb-1"
-                  >
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     Customer Name *
                   </label>
                   <input
-                    id="cust-name"
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     required
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
                   />
                   {formErrors.customerName && (
                     <p className="mt-1 text-[11px] font-semibold text-rose-600">
@@ -2367,27 +2570,17 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="cust-phone"
-                    className="block text-xs font-bold text-slate-700 mb-1"
-                  >
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     Mobile Number (10-digit India +91) *
                   </label>
-                  <div className="flex">
-                    <span className="inline-flex items-center rounded-l-xl border border-r-0 border-slate-300 bg-slate-100 px-3 text-xs font-bold text-slate-600">
-                      +91
-                    </span>
-                    <input
-                      id="cust-phone"
-                      type="tel"
-                      maxLength={10}
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
-                      placeholder="9876543210"
-                      required
-                      className="w-full rounded-r-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
-                    />
-                  </div>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
+                    required
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
+                  />
                   {formErrors.customerPhone && (
                     <p className="mt-1 text-[11px] font-semibold text-rose-600">
                       {formErrors.customerPhone}
@@ -2396,21 +2589,16 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Service Address */}
               <div>
-                <label
-                  htmlFor="cust-address"
-                  className="block text-xs font-bold text-slate-700 mb-1"
-                >
+                <label className="block text-xs font-bold text-slate-700 mb-1">
                   Complete Doorstep Service Address *
                 </label>
                 <input
-                  id="cust-address"
                   type="text"
                   value={serviceAddress}
                   onChange={(e) => setServiceAddress(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
                 />
                 {formErrors.serviceAddress && (
                   <p className="mt-1 text-[11px] font-semibold text-rose-600">
@@ -2419,43 +2607,29 @@ export default function App() {
                 )}
               </div>
 
-              {/* Date & Time Slot */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label
-                    htmlFor="bk-date"
-                    className="block text-xs font-bold text-slate-700 mb-1"
-                  >
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     Preferred Service Date *
                   </label>
                   <input
-                    id="bk-date"
                     type="date"
                     min={getTodayDateString()}
                     value={bookingDate}
                     onChange={(e) => setBookingDate(e.target.value)}
                     required
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
                   />
-                  {formErrors.bookingDate && (
-                    <p className="mt-1 text-[11px] font-semibold text-rose-600">
-                      {formErrors.bookingDate}
-                    </p>
-                  )}
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="bk-slot"
-                    className="block text-xs font-bold text-slate-700 mb-1"
-                  >
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     Available Time Slot *
                   </label>
                   <select
-                    id="bk-slot"
                     value={bookingSlot}
                     onChange={(e) => setBookingSlot(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-900 focus:border-orange-500 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-900"
                   >
                     {TIME_SLOTS.map((slot) => (
                       <option key={slot} value={slot}>
@@ -2466,29 +2640,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Optional Special Instructions */}
-              <div>
-                <label
-                  htmlFor="bk-notes"
-                  className="block text-xs font-bold text-slate-700 mb-1"
-                >
-                  Special Instructions / Notes (Optional)
-                </label>
-                <input
-                  id="bk-notes"
-                  type="text"
-                  value={serviceNotes}
-                  onChange={(e) => setServiceNotes(e.target.value)}
-                  placeholder="E.g., Gate passcode, puja samagri preference, pet at home..."
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              {/* Promo Code & Gift Card Inputs */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-1">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Promo Code (Try SEVA20 or FIRST100)
+                    Promo Code (Try SEVA20)
                   </label>
                   <div className="flex gap-1.5">
                     <input
@@ -2501,7 +2656,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleApplyPromo}
-                      className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 cursor-pointer"
+                      className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white cursor-pointer"
                     >
                       Apply
                     </button>
@@ -2519,7 +2674,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Demo Gift Card (Try GIFT-SEVA-500)
+                    Demo Gift Card (GIFT-SEVA-500)
                   </label>
                   <div className="flex gap-1.5">
                     <input
@@ -2532,101 +2687,19 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleApplyGiftCard}
-                      className="rounded-xl bg-teal-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-teal-600 cursor-pointer"
+                      className="rounded-xl bg-teal-700 px-3 py-1.5 text-xs font-bold text-white cursor-pointer"
                     >
                       Redeem
                     </button>
                   </div>
-                  {giftMessage && (
-                    <p
-                      className={`mt-1 text-[11px] font-semibold ${
-                        giftMessage.type === 'ok' ? 'text-emerald-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {giftMessage.text}
-                    </p>
-                  )}
                 </div>
               </div>
 
-              {/* Loyalty Discount Toggle */}
-              {isLoyaltyUnlocked && (
-                <label className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={applyLoyaltyReward}
-                    onChange={(e) => setApplyLoyaltyReward(e.target.checked)}
-                    className="h-4 w-4 rounded text-orange-600"
-                  />
-                  <span className="font-semibold text-amber-950">
-                    Apply 5% Loyalty Streak Reward (-₹{Math.round(bookingModalPro.priceInr * 0.05)})
-                    based on your {completedCount} completed booking(s)
-                  </span>
-                </label>
-              )}
-
-              {/* Demo Payment Method Selector */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Select Payment Option (Demo Mode — No Real Payment Collected)
-                </label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {(
-                    [
-                      'UPI (Demo - GPay / PhonePe)',
-                      'Card (Demo - No Real Card Collected)',
-                      'Net Banking (Demo)',
-                      'Cash on Service',
-                    ] as PaymentMethod[]
-                  ).map((method) => (
-                    <label
-                      key={method}
-                      className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer ${
-                        paymentMethod === method
-                          ? 'border-orange-500 bg-orange-50/60 text-orange-900'
-                          : 'border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        checked={paymentMethod === method}
-                        onChange={() => setPaymentMethod(method)}
-                      />
-                      <span>{method}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Itemized Price Summary */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-600">
-                  <span>Indicative Service Visit Charge</span>
-                  <span>₹{priceBreakdown.basePrice}</span>
+                  <span>Base Visit Charge + Hygiene Support Fee</span>
+                  <span>₹{priceBreakdown.basePrice + priceBreakdown.platformFee}</span>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Platform Hygiene & Safety Support Fee</span>
-                  <span>₹{priceBreakdown.platformFee}</span>
-                </div>
-                {priceBreakdown.promoDiscount > 0 && (
-                  <div className="flex justify-between font-semibold text-emerald-600">
-                    <span>Promo Discount ({appliedPromo})</span>
-                    <span>-₹{priceBreakdown.promoDiscount}</span>
-                  </div>
-                )}
-                {priceBreakdown.loyaltyDiscount > 0 && (
-                  <div className="flex justify-between font-semibold text-emerald-600">
-                    <span>Loyalty Streak Reward (5%)</span>
-                    <span>-₹{priceBreakdown.loyaltyDiscount}</span>
-                  </div>
-                )}
-                {priceBreakdown.giftDeduction > 0 && (
-                  <div className="flex justify-between font-semibold text-teal-600">
-                    <span>Gift Card Deduction ({appliedGift})</span>
-                    <span>-₹{priceBreakdown.giftDeduction}</span>
-                  </div>
-                )}
                 <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-extrabold text-slate-900">
                   <span>Total Payable (Demo)</span>
                   <span>₹{priceBreakdown.finalPayable}</span>
@@ -2637,13 +2710,13 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setBookingModalPro(null)}
-                  className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow-md hover:opacity-95 cursor-pointer"
+                  className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow-md cursor-pointer"
                 >
                   Confirm Demo Booking (₹{priceBreakdown.finalPayable})
                 </button>
@@ -2653,84 +2726,54 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. RESCHEDULE BOOKING MODAL */}
       {rescheduleModalBooking && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Reschedule Booking"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
         >
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-slate-900">
-                Reschedule Booking ({rescheduleModalBooking.reference})
-              </h2>
-              <button
-                type="button"
-                onClick={() => setRescheduleModalBooking(null)}
-                className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <p className="mt-1 text-xs text-slate-600">
-              Current slot with <strong>{rescheduleModalBooking.professionalName}</strong>:{' '}
-              {rescheduleModalBooking.date} ({rescheduleModalBooking.timeSlot})
-            </p>
-
+            <h2 className="text-lg font-extrabold text-slate-900">
+              Reschedule Booking ({rescheduleModalBooking.reference})
+            </h2>
             <form onSubmit={handleConfirmReschedule} className="mt-4 space-y-4">
               {rescheduleError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
                   {rescheduleError}
                 </div>
               )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Select New Date *
-                </label>
-                <input
-                  type="date"
-                  min={getTodayDateString()}
-                  value={newRescheduleDate}
-                  onChange={(e) => setNewRescheduleDate(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Select New Time Slot *
-                </label>
-                <select
-                  value={newRescheduleSlot}
-                  onChange={(e) => setNewRescheduleSlot(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-900"
-                >
-                  {TIME_SLOTS.map((slot) => (
-                    <option key={slot} value={slot}>
-                      {slot}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <input
+                type="date"
+                min={getTodayDateString()}
+                value={newRescheduleDate}
+                onChange={(e) => setNewRescheduleDate(e.target.value)}
+                required
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
+              />
+              <select
+                value={newRescheduleSlot}
+                onChange={(e) => setNewRescheduleSlot(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-900"
+              >
+                {TIME_SLOTS.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setRescheduleModalBooking(null)}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 cursor-pointer"
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700"
                 >
-                  Keep Current Slot
+                  Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 cursor-pointer"
+                  className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-bold text-slate-950"
                 >
-                  Confirm New Date & Time
+                  Save New Slot
                 </button>
               </div>
             </form>
@@ -2738,12 +2781,10 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. CANCEL BOOKING CONFIRMATION MODAL */}
       {cancelModalBooking && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Cancel Booking Confirmation"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
         >
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
@@ -2753,37 +2794,24 @@ export default function App() {
                 Cancel Booking {cancelModalBooking.reference}?
               </h2>
             </div>
-
-            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
-              Are you sure you want to cancel your appointment with{' '}
-              <strong>{cancelModalBooking.professionalName}</strong> scheduled for{' '}
-              {cancelModalBooking.date} ({cancelModalBooking.timeSlot})? Cancelled bookings cannot be tracked or rescheduled.
-            </p>
-
             <form onSubmit={handleConfirmCancel} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Reason for Cancellation (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs text-slate-900"
+              />
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setCancelModalBooking(null)}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 cursor-pointer"
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700"
                 >
                   Go Back
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-500 cursor-pointer"
+                  className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white"
                 >
                   Yes, Cancel Booking
                 </button>
@@ -2793,119 +2821,55 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. LEAVE FEEDBACK & STAR RATING MODAL */}
       {feedbackModalBooking && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Rate Your Experience"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
         >
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-orange-600">
-                  Verified Completed Service ({feedbackModalBooking.reference})
-                </span>
-                <h2 className="text-lg font-extrabold text-slate-900">
-                  Rate {feedbackModalBooking.professionalName}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFeedbackModalBooking(null)}
-                className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
+            <h2 className="text-lg font-extrabold text-slate-900">
+              Rate {feedbackModalBooking.professionalName}
+            </h2>
             <form onSubmit={handleSubmitFeedback} className="mt-4 space-y-4">
-              {/* 1 to 5 Star Selector */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  Select Star Rating (1 to 5 Stars) *
-                </label>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setFeedbackRating(star)}
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition cursor-pointer ${
-                        star <= feedbackRating
-                          ? 'border-amber-400 bg-amber-50 text-amber-500'
-                          : 'border-slate-200 bg-slate-50 text-slate-300'
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setFeedbackRating(star)}
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
+                      star <= feedbackRating
+                        ? 'border-amber-400 bg-amber-50 text-amber-500'
+                        : 'border-slate-200 bg-slate-50 text-slate-300'
+                    }`}
+                  >
+                    <Star
+                      className={`h-5 w-5 ${
+                        star <= feedbackRating ? 'fill-amber-400 text-amber-400' : ''
                       }`}
-                    >
-                      <Star
-                        className={`h-5 w-5 ${
-                          star <= feedbackRating ? 'fill-amber-400 text-amber-400' : ''
-                        }`}
-                      />
-                    </button>
-                  ))}
-                  <span className="ml-2 text-sm font-extrabold text-slate-800">
-                    {feedbackRating} / 5
-                  </span>
-                </div>
+                    />
+                  </button>
+                ))}
               </div>
-
-              {/* Selectable Feedback Tags */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  What went well? (Optional Tags)
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {FEEDBACK_TAGS.map((tag) => {
-                    const active = feedbackSelectedTags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() =>
-                          setFeedbackSelectedTags((prev) =>
-                            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-                          )
-                        }
-                        className={`rounded-full px-3 py-1 text-xs font-semibold transition cursor-pointer ${
-                          active
-                            ? 'bg-orange-600 text-white'
-                            : 'border border-slate-200 bg-slate-50 text-slate-700'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Optional Written Review */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Write a Review (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={feedbackComment}
-                  onChange={(e) => setFeedbackComment(e.target.value)}
-                  placeholder="Share how the professional performed..."
-                  className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900 focus:border-orange-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <textarea
+                rows={3}
+                value={feedbackComment}
+                onChange={(e) => setFeedbackComment(e.target.value)}
+                placeholder="Share how the professional performed..."
+                className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900"
+              />
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setFeedbackModalBooking(null)}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 cursor-pointer"
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-xs font-bold text-white shadow cursor-pointer"
+                  className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-xs font-bold text-white"
                 >
                   Submit Feedback
                 </button>
@@ -2930,121 +2894,13 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-10 mt-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-rose-500 text-white">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <span className="text-lg font-extrabold text-slate-900">
-                  Seva<span className="text-orange-600">Setu</span>
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Trusted services, right at your doorstep. Connecting Indian households with sample Vedic Pandits, home cleaners, plumbers, electricians, and skilled artisans.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-3">
-                Service Categories
-              </h3>
-              <ul className="space-y-1.5 text-xs text-slate-600">
-                {SERVICE_CATEGORIES.slice(0, 4).map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCategory(c.id);
-                        setActivePage('services');
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className="hover:text-orange-600 cursor-pointer"
-                    >
-                      {c.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-3">
-                More Categories
-              </h3>
-              <ul className="space-y-1.5 text-xs text-slate-600">
-                {SERVICE_CATEGORIES.slice(4, 8).map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCategory(c.id);
-                        setActivePage('services');
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className="hover:text-orange-600 cursor-pointer"
-                    >
-                      {c.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-3">
-                Quick Demo Links
-              </h3>
-              <ul className="space-y-1.5 text-xs text-slate-600">
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => setActivePage('bookings')}
-                    className="hover:text-orange-600 cursor-pointer"
-                  >
-                    My Bookings Dashboard
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => setActivePage('tracking')}
-                    className="hover:text-orange-600 cursor-pointer"
-                  >
-                    Live Route Tracking Simulator
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => setActivePage('rewards')}
-                    className="hover:text-orange-600 cursor-pointer"
-                  >
-                    Loyalty Rewards & Promo Codes
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={handleResetAllDemoData}
-                    className="font-semibold text-rose-600 hover:underline cursor-pointer"
-                  >
-                    Reset Demo Data to Defaults
-                  </button>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-8 border-t border-slate-100 pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2">
-            <span>© 2026 SevaSetu Hackathon Prototype. All rights reserved.</span>
-            <span className="inline-flex items-center gap-1">
-              <Info className="h-3.5 w-3.5" />
-              All professionals, phone numbers, and reviews are clearly labeled illustrative demo data.
-            </span>
-          </div>
+      <footer className="border-t border-slate-200 bg-white py-8 mt-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+          <span>© 2026 SevaSetu Hackathon Prototype. All rights reserved.</span>
+          <span className="inline-flex items-center gap-1">
+            <Info className="h-3.5 w-3.5" />
+            All professionals, phone numbers, and reviews are illustrative demo data.
+          </span>
         </div>
       </footer>
     </div>
